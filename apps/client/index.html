@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect width=%2216%22 height=%2216%22 fill=%22%236ee7b7%22/></svg>" />
+    <title>Pixel Realms</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #0a0a0a;
+        overflow: hidden;
+        font-family: 'Geist Mono', ui-monospace, monospace;
+        color: #e4e4e7;
+        /* Prevent iOS rubber-band scrolling */
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        /* Disable double-tap zoom, text selection, callouts */
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+      }
+      #game {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        image-rendering: pixelated;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: crisp-edges;
+      }
+      #game canvas {
+        display: block;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      #hud {
+        position: fixed;
+        top: max(8px, env(safe-area-inset-top));
+        left: max(8px, env(safe-area-inset-left));
+        z-index: 10;
+        font-size: 11px;
+        background: rgba(0,0,0,0.55);
+        padding: 6px 10px;
+        border-radius: 6px;
+        pointer-events: none;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud">connecting…</div>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

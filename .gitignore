@@ -1,0 +1,21 @@
+node_modules
+dist
+build
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.turbo
+.vite
+
+# Player account data (local file storage — never commit)
+apps/server/data/
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
