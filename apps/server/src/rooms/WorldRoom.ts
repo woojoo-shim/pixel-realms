@@ -1510,11 +1510,11 @@ export class WorldRoom extends Room<WorldState> {
     return out;
   }
 
-  onJoin(
+  async onJoin(
     client: Client,
     options: { username?: string; password?: string } = {}
   ) {
-    const auth = accountStore.loginOrRegister(
+    const auth = await accountStore.loginOrRegister(
       options.username ?? "",
       options.password ?? ""
     );

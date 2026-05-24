@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.cache
+apps/client
+data
+.git
+.github
+.vscode
+.idea
+*.md
+!README.md
+.env*
+.DS_Store

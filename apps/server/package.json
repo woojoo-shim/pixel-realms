@@ -10,9 +10,10 @@
   },
   "dependencies": {
     "@colyseus/schema": "^3.0.0",
+    "@colyseus/ws-transport": "^0.16.0",
     "@pr/shared": "workspace:*",
-    "colyseus": "^0.16.0",
-    "@colyseus/ws-transport": "^0.16.0"
+    "@supabase/supabase-js": "^2.106.1",
+    "colyseus": "^0.16.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

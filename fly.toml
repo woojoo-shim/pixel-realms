@@ -1,0 +1,47 @@
+# Pixel Realms — Fly.io config
+# Replace `app` with the name `fly launch` assigns (or pick your own).
+
+app = "pixel-realms-server"
+primary_region = "nrt"  # Tokyo — change if you want closer to your players
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "2567"
+
+# Single TCP service that handles both HTTP (for /health) and the
+# Colyseus WebSocket upgrade on the same port.
+[[services]]
+  protocol = "tcp"
+  internal_port = 2567
+  auto_stop_machines = "off"   # WS games need always-on
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

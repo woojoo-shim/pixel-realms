@@ -1,9 +1,12 @@
 /**
- * Persistent account store. Each account = one character. Stored as JSON
- * on disk (data/accounts.json). Simple username + password authentication —
- * passwords are salted + SHA-256 hashed (not bcrypt — hobby-grade only).
+ * Persistent account store. Each account = one character.
  *
- * On disk: lowercase-username → { salt, passwordHash, character, ... }.
+ * Two backends, auto-selected by env:
+ *   - Supabase (SUPABASE_URL + SUPABASE_SERVICE_KEY set): production
+ *   - File on disk (data/accounts.json): local dev / fallback
+ *
+ * Simple username + password authentication — passwords are salted +
+ * SHA-256 hashed (not bcrypt — hobby-grade only).
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -14,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const ACCOUNTS_PATH = resolve(process.cwd(), "data/accounts.json");
 
@@ -89,29 +93,45 @@ export type LoginResult =
   | { ok: true; character: CharacterData; username: string }
   | { ok: false; reason: "bad_password" | "invalid_name" };
 
-class AccountStoreImpl {
+function hashPassword(password: string, salt: string): string {
+  return createHash("sha256").update(`${password}::${salt}`).digest("hex");
+}
+
+/** Validate username — 2..16 chars, alphanumeric + underscore/dash. */
+function normalizeUsername(username: string): string | null {
+  if (!username) return null;
+  const u = username.trim();
+  if (u.length < 2 || u.length > 16) return null;
+  if (!/^[a-zA-Z0-9_-]+$/.test(u)) return null;
+  return u;
+}
+
+interface AccountBackend {
+  loginOrRegister(usernameRaw: string, password: string): Promise<LoginResult>;
+  saveCharacter(username: string, character: CharacterData): void;
+  flushNow(): Promise<void>;
+}
+
+/* ─── File backend (local dev / no env) ─────────────────────────────── */
+
+class FileBackend implements AccountBackend {
   private accounts: Record<string, Account> = {};
-  /** Pending writes flag — set true on save(), flushed on writeNow(). */
   private dirty = false;
+  private flushTimer: NodeJS.Timeout | null = null;
 
   constructor() {
-    this.load();
-  }
-
-  private load() {
     if (!existsSync(ACCOUNTS_PATH)) return;
     try {
       const data = readFileSync(ACCOUNTS_PATH, "utf-8");
       this.accounts = JSON.parse(data);
       console.log(
-        `[accounts] loaded ${Object.keys(this.accounts).length} account(s)`
+        `[accounts:file] loaded ${Object.keys(this.accounts).length} account(s)`
       );
     } catch (e) {
-      console.error("[accounts] load failed:", e);
+      console.error("[accounts:file] load failed:", e);
     }
   }
 
-  /** Synchronously flush to disk. Called by saveCharacter and on shutdown. */
   private writeNow() {
     const dir = dirname(ACCOUNTS_PATH);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -119,45 +139,27 @@ class AccountStoreImpl {
     this.dirty = false;
   }
 
-  private hashPassword(password: string, salt: string): string {
-    return createHash("sha256")
-      .update(`${password}::${salt}`)
-      .digest("hex");
-  }
-
-  /** Validate username — 2..16 chars, alphanumeric + underscore/dash. */
-  static normalize(username: string): string | null {
-    if (!username) return null;
-    const u = username.trim();
-    if (u.length < 2 || u.length > 16) return null;
-    if (!/^[a-zA-Z0-9_-]+$/.test(u)) return null;
-    return u;
-  }
-
-  loginOrRegister(usernameRaw: string, password: string): LoginResult {
-    const u = AccountStoreImpl.normalize(usernameRaw);
+  async loginOrRegister(usernameRaw: string, password: string): Promise<LoginResult> {
+    const u = normalizeUsername(usernameRaw);
     if (!u) return { ok: false, reason: "invalid_name" };
     const key = u.toLowerCase();
     const existing = this.accounts[key];
     if (existing) {
-      const hash = this.hashPassword(password, existing.salt);
-      if (hash !== existing.passwordHash)
+      if (hashPassword(password, existing.salt) !== existing.passwordHash)
         return { ok: false, reason: "bad_password" };
       return { ok: true, username: u, character: existing.character };
     }
-    // Register new account
     const salt = randomBytes(8).toString("hex");
-    const passwordHash = this.hashPassword(password, salt);
     const character = makeStarterCharacter(u);
     this.accounts[key] = {
       salt,
-      passwordHash,
+      passwordHash: hashPassword(password, salt),
       character,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     this.writeNow();
-    console.log(`[accounts] created new account: ${u}`);
+    console.log(`[accounts:file] created: ${u}`);
     return { ok: true, username: u, character };
   }
 
@@ -168,12 +170,6 @@ class AccountStoreImpl {
     acc.character = character;
     acc.updatedAt = Date.now();
     this.dirty = true;
-    // Debounced write — accumulate but always have a timer flushing.
-    this.scheduleFlush();
-  }
-
-  private flushTimer: NodeJS.Timeout | null = null;
-  private scheduleFlush() {
     if (this.flushTimer) return;
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
@@ -181,8 +177,7 @@ class AccountStoreImpl {
     }, 1500);
   }
 
-  /** Flush immediately (e.g. on shutdown). */
-  flushNow() {
+  async flushNow() {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
@@ -191,7 +186,143 @@ class AccountStoreImpl {
   }
 }
 
-export const accountStore = new AccountStoreImpl();
+/* ─── Supabase backend ──────────────────────────────────────────────── */
+
+class SupabaseBackend implements AccountBackend {
+  private client: SupabaseClient;
+  /** In-memory cache so we don't hit Supabase for every read. Keyed by lowercase username. */
+  private cache = new Map<
+    string,
+    { salt: string; passwordHash: string; character: CharacterData; displayName: string }
+  >();
+  /** Pending character writes — debounced. Key = lowercase username. */
+  private pending = new Map<string, CharacterData>();
+  private flushTimer: NodeJS.Timeout | null = null;
+
+  constructor(url: string, serviceKey: string) {
+    this.client = createClient(url, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    console.log(`[accounts:supabase] connected to ${url}`);
+  }
+
+  async loginOrRegister(usernameRaw: string, password: string): Promise<LoginResult> {
+    const u = normalizeUsername(usernameRaw);
+    if (!u) return { ok: false, reason: "invalid_name" };
+    const key = u.toLowerCase();
+
+    // Try cache first
+    const cached = this.cache.get(key);
+    if (cached) {
+      if (hashPassword(password, cached.salt) !== cached.passwordHash)
+        return { ok: false, reason: "bad_password" };
+      return { ok: true, username: cached.displayName, character: cached.character };
+    }
+
+    // Fetch from Supabase
+    const { data, error } = await this.client
+      .from("accounts")
+      .select("display_name, salt, password_hash, character")
+      .eq("username", key)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[accounts:supabase] select failed:", error);
+      return { ok: false, reason: "invalid_name" };
+    }
+
+    if (data) {
+      if (hashPassword(password, data.salt) !== data.password_hash)
+        return { ok: false, reason: "bad_password" };
+      this.cache.set(key, {
+        salt: data.salt,
+        passwordHash: data.password_hash,
+        character: data.character as CharacterData,
+        displayName: data.display_name,
+      });
+      return {
+        ok: true,
+        username: data.display_name,
+        character: data.character as CharacterData,
+      };
+    }
+
+    // Register new
+    const salt = randomBytes(8).toString("hex");
+    const passwordHash = hashPassword(password, salt);
+    const character = makeStarterCharacter(u);
+    const { error: insertErr } = await this.client.from("accounts").insert({
+      username: key,
+      display_name: u,
+      salt,
+      password_hash: passwordHash,
+      character,
+    });
+    if (insertErr) {
+      console.error("[accounts:supabase] insert failed:", insertErr);
+      return { ok: false, reason: "invalid_name" };
+    }
+    this.cache.set(key, { salt, passwordHash, character, displayName: u });
+    console.log(`[accounts:supabase] created: ${u}`);
+    return { ok: true, username: u, character };
+  }
+
+  saveCharacter(username: string, character: CharacterData) {
+    const key = username.toLowerCase();
+    const cached = this.cache.get(key);
+    if (cached) cached.character = character;
+    this.pending.set(key, character);
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      void this.flushPending();
+    }, 2000);
+  }
+
+  private async flushPending() {
+    if (this.pending.size === 0) return;
+    const batch = Array.from(this.pending.entries());
+    this.pending.clear();
+    // Update in parallel — one PATCH per account.
+    await Promise.all(
+      batch.map(([key, character]) =>
+        this.client
+          .from("accounts")
+          .update({ character, updated_at: new Date().toISOString() })
+          .eq("username", key)
+          .then(({ error }) => {
+            if (error) console.error(`[accounts:supabase] update ${key}:`, error);
+          })
+      )
+    );
+  }
+
+  async flushNow() {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    await this.flushPending();
+  }
+}
+
+/* ─── Backend selection ─────────────────────────────────────────────── */
+
+function makeBackend(): AccountBackend {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+  if (url && serviceKey) return new SupabaseBackend(url, serviceKey);
+  console.log("[accounts] using file backend (no SUPABASE_URL set)");
+  return new FileBackend();
+}
+
+const backend = makeBackend();
+
+export const accountStore = {
+  loginOrRegister: (u: string, p: string) => backend.loginOrRegister(u, p),
+  saveCharacter: (u: string, c: CharacterData) => backend.saveCharacter(u, c),
+  flushNow: () => backend.flushNow(),
+};
 
 // Flush on process exit
 process.on("SIGINT", () => {
