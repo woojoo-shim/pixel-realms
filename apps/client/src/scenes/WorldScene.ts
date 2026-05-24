@@ -177,6 +177,7 @@ export class WorldScene extends Phaser.Scene {
   private roomId?: string;
   private username: string = "";
   private password: string = "";
+  private token: string = "";
 
   constructor() {
     super("world");
@@ -187,11 +188,13 @@ export class WorldScene extends Phaser.Scene {
     roomId?: string;
     username?: string;
     password?: string;
+    token?: string;
   }) {
     this.mode = data?.mode ?? "quick";
     this.roomId = data?.roomId;
     this.username = data?.username ?? "";
     this.password = data?.password ?? "";
+    this.token = data?.token ?? "";
   }
 
   async create() {
@@ -393,7 +396,7 @@ export class WorldScene extends Phaser.Scene {
     this.cameras.main.setRoundPixels(true);
 
     try {
-      if (!this.username || !this.password) {
+      if (!this.token && (!this.username || !this.password)) {
         // No credentials — return to menu.
         this.scene.start("menu");
         return;
@@ -401,6 +404,7 @@ export class WorldScene extends Phaser.Scene {
       const { room } = await joinWorld({
         username: this.username,
         password: this.password,
+        token: this.token,
         mode: this.mode,
         roomId: this.roomId,
       });

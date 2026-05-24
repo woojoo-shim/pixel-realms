@@ -1512,26 +1512,31 @@ export class WorldRoom extends Room<WorldState> {
 
   async onJoin(
     client: Client,
-    options: { username?: string; password?: string } = {}
+    options: { username?: string; password?: string; token?: string } = {}
   ) {
-    const auth = await accountStore.loginOrRegister(
-      options.username ?? "",
-      options.password ?? ""
-    );
+    // OAuth path takes priority. Otherwise fall back to username/password.
+    const auth = options.token
+      ? await accountStore.loginWithToken(options.token)
+      : await accountStore.loginOrRegister(
+          options.username ?? "",
+          options.password ?? ""
+        );
     if (!auth.ok) {
       // Send error to the client and close the session.
       const reason =
         auth.reason === "bad_password"
           ? "Wrong password for this name."
-          : "Invalid username (2-16 chars, letters/numbers/_/-).";
+          : auth.reason === "bad_token"
+            ? "OAuth sign-in failed — try again."
+            : "Invalid username (2-16 chars, letters/numbers/_/-).";
       client.send("auth-error", { reason });
       client.leave(4001, reason);
       return;
     }
-    // Reject duplicate active logins
+    // Reject duplicate active logins (compare storage keys, not display names).
     let duplicate = false;
-    this.state.players.forEach((existing) => {
-      if (existing.name.toLowerCase() === auth.username.toLowerCase())
+    this.sessionAccount.forEach((existingKey) => {
+      if (existingKey.toLowerCase() === auth.username.toLowerCase())
         duplicate = true;
     });
     if (duplicate) {

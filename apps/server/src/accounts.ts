@@ -91,7 +91,7 @@ export function makeStarterCharacter(name: string): CharacterData {
 
 export type LoginResult =
   | { ok: true; character: CharacterData; username: string }
-  | { ok: false; reason: "bad_password" | "invalid_name" };
+  | { ok: false; reason: "bad_password" | "invalid_name" | "bad_token" };
 
 function hashPassword(password: string, salt: string): string {
   return createHash("sha256").update(`${password}::${salt}`).digest("hex");
@@ -108,6 +108,7 @@ function normalizeUsername(username: string): string | null {
 
 interface AccountBackend {
   loginOrRegister(usernameRaw: string, password: string): Promise<LoginResult>;
+  loginWithToken(token: string): Promise<LoginResult>;
   saveCharacter(username: string, character: CharacterData): void;
   flushNow(): Promise<void>;
 }
@@ -161,6 +162,12 @@ class FileBackend implements AccountBackend {
     this.writeNow();
     console.log(`[accounts:file] created: ${u}`);
     return { ok: true, username: u, character };
+  }
+
+  async loginWithToken(_token: string): Promise<LoginResult> {
+    // File backend has no way to verify Supabase JWTs. OAuth is only
+    // available when running with Supabase backend configured.
+    return { ok: false, reason: "bad_token" };
   }
 
   saveCharacter(username: string, character: CharacterData) {
@@ -265,6 +272,82 @@ class SupabaseBackend implements AccountBackend {
     this.cache.set(key, { salt, passwordHash, character, displayName: u });
     console.log(`[accounts:supabase] created: ${u}`);
     return { ok: true, username: u, character };
+  }
+
+  /**
+   * Verify a Supabase OAuth access token, then create/load the account
+   * keyed by `oauth:<supabase user id>`. Display name is taken from the
+   * Google/GitHub/Discord profile when possible.
+   */
+  async loginWithToken(token: string): Promise<LoginResult> {
+    if (!token) return { ok: false, reason: "bad_token" };
+    const { data, error } = await this.client.auth.getUser(token);
+    if (error || !data.user) {
+      console.warn("[accounts:supabase] token verify failed:", error?.message);
+      return { ok: false, reason: "bad_token" };
+    }
+    const user = data.user;
+    const key = `oauth:${user.id}`;
+    const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+    const displayName = (
+      (typeof meta.full_name === "string" && meta.full_name) ||
+      (typeof meta.name === "string" && meta.name) ||
+      (typeof meta.user_name === "string" && meta.user_name) ||
+      (typeof meta.preferred_username === "string" && meta.preferred_username) ||
+      user.email?.split("@")[0] ||
+      "Adventurer"
+    )
+      .toString()
+      .slice(0, 16);
+
+    // Cache hit
+    const cached = this.cache.get(key);
+    if (cached) {
+      return { ok: true, username: cached.displayName, character: cached.character };
+    }
+
+    // Lookup
+    const { data: row, error: selErr } = await this.client
+      .from("accounts")
+      .select("display_name, character")
+      .eq("username", key)
+      .maybeSingle();
+    if (selErr) {
+      console.error("[accounts:supabase] select failed:", selErr);
+      return { ok: false, reason: "bad_token" };
+    }
+    if (row) {
+      this.cache.set(key, {
+        salt: "",
+        passwordHash: "",
+        character: row.character as CharacterData,
+        displayName: row.display_name,
+      });
+      // username = storage key (not display) so saveCharacter can find the row.
+      // PlayerState.name comes from character.name (display name).
+      return {
+        ok: true,
+        username: key,
+        character: row.character as CharacterData,
+      };
+    }
+
+    // Register
+    const character = makeStarterCharacter(displayName);
+    const { error: insErr } = await this.client.from("accounts").insert({
+      username: key,
+      display_name: displayName,
+      salt: "",
+      password_hash: "",
+      character,
+    });
+    if (insErr) {
+      console.error("[accounts:supabase] insert OAuth failed:", insErr);
+      return { ok: false, reason: "bad_token" };
+    }
+    this.cache.set(key, { salt: "", passwordHash: "", character, displayName });
+    console.log(`[accounts:supabase] created OAuth account: ${key} (${displayName})`);
+    return { ok: true, username: key, character };
   }
 
   saveCharacter(username: string, character: CharacterData) {

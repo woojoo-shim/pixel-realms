@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@pr/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.106.1",
     "colyseus.js": "^0.16.0",
     "phaser": "^3.86.0"
   },

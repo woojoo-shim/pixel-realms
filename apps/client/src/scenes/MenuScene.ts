@@ -1,4 +1,12 @@
 import Phaser from "phaser";
+import {
+  cleanOAuthHash,
+  getSession,
+  oauthEnabled,
+  signInWithProvider,
+  signOut,
+  type OAuthProvider,
+} from "../auth/supabase.js";
 
 /**
  * Title screen — Diablo-flavoured, dark background with rising embers
@@ -7,6 +15,9 @@ import Phaser from "phaser";
 export class MenuScene extends Phaser.Scene {
   private overlay?: HTMLDivElement;
   private emberTimer?: Phaser.Time.TimerEvent;
+  /** Cached Supabase session (set after getSession() resolves). */
+  private oauthToken: string | null = null;
+  private oauthDisplayName: string | null = null;
 
   constructor() {
     super("menu");
@@ -290,6 +301,26 @@ export class MenuScene extends Phaser.Scene {
     } as CSSStyleDeclaration);
 
     const launch = (mode: "solo" | "create" | "join", roomId?: string) => {
+      // ── OAuth path ────────────────────────────────────────────────
+      if (this.oauthToken) {
+        if (mode === "join" && (!roomId || roomId.length < 3)) {
+          status.style.color = "#fca5a5";
+          status.textContent = "Enter a room ID";
+          return;
+        }
+        soloBtn.disabled = true;
+        createBtn.disabled = true;
+        joinBtn.disabled = true;
+        status.style.color = "#a8a29e";
+        status.textContent = "Entering…";
+        this.scene.start("world", {
+          mode,
+          roomId,
+          token: this.oauthToken,
+        });
+        return;
+      }
+      // ── Username/password path ────────────────────────────────────
       const finalName = (
         nameInput.value.trim() || `Hero${Math.floor(Math.random() * 1000)}`
       ).slice(0, 16);
@@ -364,6 +395,135 @@ export class MenuScene extends Phaser.Scene {
       letterSpacing: "1px",
     } as CSSStyleDeclaration);
 
+    /* ── OAuth row (Google / GitHub / Discord) ────────────────────── */
+    const oauthRow = document.createElement("div");
+    Object.assign(oauthRow.style, {
+      display: oauthEnabled ? "flex" : "none",
+      gap: "10px",
+      width: "min(280px, 80vw)",
+      justifyContent: "space-between",
+    } as CSSStyleDeclaration);
+
+    const makeOauthBtn = (
+      provider: OAuthProvider,
+      label: string,
+      bg: string
+    ) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.title = `Sign in with ${provider}`;
+      Object.assign(b.style, {
+        flex: "1",
+        padding: "10px 0",
+        fontFamily: "monospace",
+        fontSize: "18px",
+        background: bg,
+        color: "#fff",
+        border: "2px solid rgba(255,255,255,0.15)",
+        borderRadius: "6px",
+        cursor: "pointer",
+        touchAction: "manipulation",
+      } as CSSStyleDeclaration);
+      b.addEventListener("click", async () => {
+        status.style.color = "#a8a29e";
+        status.textContent = `Redirecting to ${provider}…`;
+        try {
+          await signInWithProvider(provider);
+        } catch (e) {
+          status.style.color = "#fca5a5";
+          status.textContent = `OAuth failed: ${(e as Error).message}`;
+        }
+      });
+      return b;
+    };
+
+    oauthRow.appendChild(makeOauthBtn("google", "G", "#ea4335"));
+    oauthRow.appendChild(makeOauthBtn("github", "▮", "#24292e"));
+    oauthRow.appendChild(makeOauthBtn("discord", "✦", "#5865f2"));
+
+    const oauthLabel = document.createElement("div");
+    oauthLabel.textContent = oauthEnabled
+      ? "— Sign in with —"
+      : "";
+    Object.assign(oauthLabel.style, {
+      display: oauthEnabled ? "block" : "none",
+      fontSize: "10px",
+      color: "#9ca3af",
+      letterSpacing: "0.2em",
+      marginBottom: "-6px",
+    } as CSSStyleDeclaration);
+
+    const separator = document.createElement("div");
+    separator.textContent = oauthEnabled ? "— or use a username —" : "";
+    Object.assign(separator.style, {
+      display: oauthEnabled ? "block" : "none",
+      fontSize: "10px",
+      color: "#9ca3af",
+      letterSpacing: "0.2em",
+      marginTop: "-2px",
+    } as CSSStyleDeclaration);
+
+    /* ── Signed-in indicator (replaces username/password when OAuth'd) ── */
+    const signedInBanner = document.createElement("div");
+    Object.assign(signedInBanner.style, {
+      display: "none",
+      width: "min(280px, 80vw)",
+      padding: "10px 14px",
+      borderRadius: "6px",
+      border: "1px solid rgba(132,225,180,0.55)",
+      background: "rgba(20,40,30,0.85)",
+      color: "#a7f3d0",
+      fontSize: "12px",
+      textAlign: "center",
+      letterSpacing: "1px",
+    } as CSSStyleDeclaration);
+    const signOutBtn = document.createElement("button");
+    signOutBtn.type = "button";
+    signOutBtn.textContent = "Sign out";
+    Object.assign(signOutBtn.style, {
+      marginLeft: "8px",
+      padding: "2px 8px",
+      fontSize: "10px",
+      background: "transparent",
+      color: "#fca5a5",
+      border: "1px solid rgba(252,165,165,0.5)",
+      borderRadius: "4px",
+      cursor: "pointer",
+    } as CSSStyleDeclaration);
+    signOutBtn.addEventListener("click", async () => {
+      await signOut();
+      window.location.reload();
+    });
+
+    /* ── Check for existing session (returning from OAuth or persisted) ── */
+    (async () => {
+      cleanOAuthHash();
+      const session = await getSession();
+      if (session) {
+        this.oauthToken = session.access_token;
+        const u = session.user;
+        this.oauthDisplayName =
+          (u.user_metadata?.full_name as string | undefined) ??
+          (u.user_metadata?.name as string | undefined) ??
+          (u.email as string | undefined) ??
+          "Adventurer";
+        // Hide username/password, show signed-in state
+        nameInput.style.display = "none";
+        passwordInput.style.display = "none";
+        oauthRow.style.display = "none";
+        oauthLabel.style.display = "none";
+        separator.style.display = "none";
+        signedInBanner.innerHTML = `Signed in as <b>${this.oauthDisplayName}</b>`;
+        signedInBanner.appendChild(signOutBtn);
+        signedInBanner.style.display = "block";
+      }
+    })();
+
+    form.appendChild(oauthLabel);
+    form.appendChild(oauthRow);
+    form.appendChild(separator);
+    form.appendChild(signedInBanner);
     form.appendChild(nameInput);
     form.appendChild(passwordInput);
     form.appendChild(soloBtn);
