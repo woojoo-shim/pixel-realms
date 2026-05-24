@@ -1,0 +1,26 @@
+# Pixel Realms — Render Blueprint
+# https://render.com/docs/blueprint-spec
+#
+# After signing in to Render with GitHub:
+#   1. New + → Blueprint
+#   2. Connect this repo
+#   3. Render reads this file
+#   4. Set the two SUPABASE_* env vars when prompted
+#   5. Apply → first build ~5min, then live
+
+services:
+  - type: web
+    name: pixel-realms-server
+    runtime: docker
+    plan: free                # 750h/mo, sleeps after 15 min idle, no card
+    region: singapore         # closest to Korea — switch if needed
+    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true          # redeploy on push to main
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false           # set manually in dashboard
+      - key: SUPABASE_SERVICE_KEY
+        sync: false           # set manually in dashboard
