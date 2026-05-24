@@ -20,7 +20,7 @@ COPY apps/server ./apps/server
 # Bundle: esbuild reads apps/server/tsconfig.json explicitly so
 # experimentalDecorators is honored (Colyseus needs the legacy transform).
 WORKDIR /app/apps/server
-RUN ../../node_modules/.bin/esbuild src/index.ts \
+RUN pnpm exec esbuild src/index.ts \
       --bundle \
       --platform=node \
       --target=node22 \
