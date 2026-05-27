@@ -13,10 +13,10 @@ export class SpellButton {
     this.el.textContent = "🔥";
     Object.assign(this.el.style, {
       position: "fixed",
-      right: "130px",
+      right: "clamp(96px, 19vmin, 140px)",
       bottom: "124px",
-      width: "76px",
-      height: "76px",
+      width: "clamp(56px, 12vmin, 84px)",
+      height: "clamp(56px, 12vmin, 84px)",
       borderRadius: "50%",
       border: "3px solid rgba(96,165,250,0.95)",
       background:

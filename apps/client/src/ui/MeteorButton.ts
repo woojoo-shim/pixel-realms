@@ -14,16 +14,16 @@ export class MeteorButton {
     this.el.title = "Meteor (M)";
     Object.assign(this.el.style, {
       position: "fixed",
-      right: "120px",
+      right: "clamp(88px, 17vmin, 130px)",
       bottom: "278px",
-      width: "60px",
-      height: "60px",
+      width: "clamp(46px, 9.5vmin, 68px)",
+      height: "clamp(46px, 9.5vmin, 68px)",
       borderRadius: "50%",
       border: "3px solid rgba(255,87,34,0.95)",
       background:
         "radial-gradient(circle at 30% 30%, rgba(255,167,38,0.95), rgba(127,29,29,0.95) 70%, rgba(40,4,4,0.95))",
       color: "#fff",
-      fontSize: "26px",
+      fontSize: "clamp(18px, 4.5vmin, 30px)",
       fontWeight: "bold",
       textShadow: "0 1px 3px #4a0a0a",
       boxShadow:

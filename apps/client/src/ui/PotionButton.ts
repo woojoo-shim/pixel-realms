@@ -14,16 +14,16 @@ export class PotionButton {
     this.el.textContent = "🧪";
     Object.assign(this.el.style, {
       position: "fixed",
-      right: "34px",
+      right: "clamp(20px, 4vmin, 40px)",
       bottom: "218px",
-      width: "60px",
-      height: "60px",
+      width: "clamp(46px, 9.5vmin, 68px)",
+      height: "clamp(46px, 9.5vmin, 68px)",
       borderRadius: "50%",
       border: "3px solid rgba(220,38,38,0.9)",
       background:
         "radial-gradient(circle at 32% 28%, rgba(254,202,202,0.45), rgba(127,29,29,0.92) 60%, rgba(60,10,10,0.95))",
       color: "#fff",
-      fontSize: "26px",
+      fontSize: "clamp(18px, 4.5vmin, 30px)",
       fontFamily: "monospace",
       zIndex: "21",
       cursor: "pointer",

@@ -376,21 +376,22 @@ export class WorldScene extends Phaser.Scene {
         .pr-btn:hover  { border-color: rgba(252,211,77,0.9); }
         .pr-btn:active { transform: translateY(1px); }
         .pr-icon-btn {
-          width: 38px; height: 38px;
-          font-size: 18px;
+          width:  clamp(32px, 6.5vmin, 44px);
+          height: clamp(32px, 6.5vmin, 44px);
+          font-size: clamp(14px, 3vmin, 22px);
           display: flex; align-items: center; justify-content: center;
           z-index: 22;
         }
         .pr-side-stack {
           position: fixed;
-          top: 96px; left: 10px;
+          top: clamp(70px, 12vmin, 110px); left: clamp(6px, 1.4vmin, 14px);
           display: flex; flex-direction: column; gap: 6px;
           z-index: 22;
         }
         .pr-badge {
-          width: 78px;
-          padding: 6px 0;
-          font-size: 11px;
+          width: clamp(64px, 13vmin, 90px);
+          padding: clamp(4px, 0.8vmin, 7px) 0;
+          font-size: clamp(9px, 1.6vmin, 12px);
           font-weight: bold;
           letter-spacing: 1px;
           text-align: center;
@@ -411,8 +412,8 @@ export class WorldScene extends Phaser.Scene {
     bagBtn.className = "pr-btn pr-icon-btn";
     Object.assign(bagBtn.style, {
       position: "fixed",
-      top: "10px",
-      left: "calc(50% + 90px)",
+      top: "clamp(6px, 1.4vmin, 14px)",
+      left: "calc(50% + clamp(72px, 16vmin, 110px))",
     } as CSSStyleDeclaration);
     bagBtn.addEventListener("click", () => this.inventoryPanel.toggle());
     document.body.appendChild(bagBtn);
@@ -1925,21 +1926,21 @@ export class WorldScene extends Phaser.Scene {
       const el = document.createElement("div");
       Object.assign(el.style, {
         position: "fixed",
-        top: "10px",
+        top: "clamp(6px, 1.4vmin, 14px)",
         left: "50%",
         transform: "translateX(-50%)",
         background:
           "linear-gradient(180deg, rgba(15,23,42,0.92), rgba(7,11,18,0.96))",
         border: "2px solid #fde047",
         borderRadius: "8px",
-        padding: "8px 12px 8px 10px",
+        padding: "clamp(6px, 1.2vmin, 10px) clamp(8px, 1.6vmin, 14px)",
         color: "#e7e7e7",
         fontFamily: "monospace",
-        fontSize: "13px",
+        fontSize: "clamp(11px, 1.8vmin, 14px)",
         display: "flex",
         alignItems: "center",
-        gap: "8px",
-        maxWidth: "min(440px, 92vw)",
+        gap: "clamp(6px, 1.2vmin, 10px)",
+        maxWidth: "min(480px, 92vw)",
         boxShadow: "0 4px 14px rgba(0,0,0,0.55)",
         zIndex: "30",
         pointerEvents: "auto",
@@ -1949,14 +1950,14 @@ export class WorldScene extends Phaser.Scene {
         background: "#fde047",
         color: "#0b1118",
         fontWeight: "bold",
-        fontSize: "11px",
+        fontSize: "clamp(9px, 1.5vmin, 12px)",
         padding: "2px 6px",
         borderRadius: "10px",
-        minWidth: "32px",
+        minWidth: "clamp(28px, 5vmin, 36px)",
         textAlign: "center",
       } as CSSStyleDeclaration);
       const icon = document.createElement("span");
-      Object.assign(icon.style, { fontSize: "18px" });
+      Object.assign(icon.style, { fontSize: "clamp(15px, 2.6vmin, 20px)" });
       const text = document.createElement("span");
       Object.assign(text.style, {
         flex: "1",
