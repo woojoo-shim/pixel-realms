@@ -366,3 +366,8 @@ export interface FxWaypointPayload {
   /** Destination MapId after travel. */
   to: string;
 }
+
+
+export * from "./skills.js";
+export type { SkillBranch, SkillDef } from "./skills.js";
+

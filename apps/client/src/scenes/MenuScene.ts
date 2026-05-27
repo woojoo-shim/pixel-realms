@@ -380,7 +380,7 @@ export class MenuScene extends Phaser.Scene {
       "<b style='color:#fde047'>PC</b> &nbsp;Move: <b>WASD</b> · Attack: <b>Left-click</b> / Space<br>" +
       "Fire Bolt: <b>Right-click</b> / 2 · Frost Nova: <b>Shift+RC</b> / 3<br>" +
       "Teleport: <b>T</b> · Meteor: <b>M</b> (aim with cursor)<br>" +
-      "Potion: <b>1</b> / Q · Character: <b>C</b> · Inventory: <b>I</b> · Quests: <b>J</b><br>" +
+      "Potion: <b>1</b> / Q · Character: <b>C</b> · Inventory: <b>I</b> · Quests: <b>J</b> · Skills: <b>K</b><br>" +
       "<b style='color:#fde047'>Mobile</b> &nbsp;Joystick + on-screen ⚔ 🔥 ❄ 🧪";
     Object.assign(help.style, {
       fontSize: "11px",

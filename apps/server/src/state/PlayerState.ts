@@ -47,6 +47,12 @@ export class PlayerState extends Schema {
   /** ShrineKind string identifying the active buff. */
   @type("string") buffKind: string = "";
 
+  // ── Skill tree ─────────────────────────────────────────────────
+  /** Unspent skill points (1 per level up). */
+  @type("number") skillPoints: number = 0;
+  /** Skill id → invested level. */
+  @type({ map: "number" }) skillLevels = new MapSchema<number>();
+
   // ── Inventory & equipment ─────────────────────────────────────────
   /** Items in the player's bag. */
   @type([InventoryItemState]) inventory =

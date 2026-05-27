@@ -50,6 +50,10 @@ export interface CharacterData {
   questProgress: Record<string, number>;
   inventory: InventoryItemData[];
   equipment: Record<string, InventoryItemData>;
+  /** Skill tree investment (id → level). */
+  skillLevels: Record<string, number>;
+  /** Unspent skill points. */
+  skillPoints: number;
 }
 
 interface Account {
@@ -86,6 +90,8 @@ export function makeStarterCharacter(name: string): CharacterData {
     questProgress: {},
     inventory: [],
     equipment: {},
+    skillLevels: {},
+    skillPoints: 0,
   };
 }
 

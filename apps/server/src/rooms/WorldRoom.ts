@@ -71,6 +71,9 @@ import {
   expToNextLevel,
   rollItemId,
   rollRarity,
+  SKILL_EFFECT,
+  SKILL_IDS,
+  getSkillDef,
   type LootKind,
   type MapData,
   type MapId,
@@ -103,10 +106,17 @@ function buffActive(p: PlayerState, kind: ShrineKind): boolean {
   return p.buffKind === kind && Date.now() < p.buffEnd;
 }
 
+/** Get the invested level of a skill (0 if not allocated). */
+function skillLv(p: PlayerState, id: string): number {
+  return p.skillLevels.get(id) ?? 0;
+}
+
 function recomputeDerived(p: PlayerState): void {
   const b = equipBonus(p);
-  const newMaxHp = playerMaxHp(p.level, p.statVit) + b.maxHp;
-  const newMaxMp = playerMaxMp(p.level, p.statMnd) + b.maxMp;
+  const vigBonus = skillLv(p, "vigorous") * SKILL_EFFECT.vigorous_hpPerLevel;
+  const arcBonus = skillLv(p, "arcaneWisdom") * SKILL_EFFECT.arcaneWisdom_mpPerLevel;
+  const newMaxHp = playerMaxHp(p.level, p.statVit) + b.maxHp + vigBonus;
+  const newMaxMp = playerMaxMp(p.level, p.statMnd) + b.maxMp + arcBonus;
   // Floor at 1 so a stat-debuff item can't kill the player.
   p.maxHp = Math.max(1, newMaxHp);
   p.maxMp = Math.max(0, newMaxMp);
@@ -263,6 +273,9 @@ export class WorldRoom extends Room<WorldState> {
     });
     this.onMessage<AllocateMessage>("allocate", (client, msg) => {
       this.handleAllocate(client.sessionId, msg?.stat);
+    });
+    this.onMessage<{ skillId: string }>("allocateSkill", (client, msg) => {
+      this.handleAllocateSkill(client.sessionId, msg?.skillId);
     });
 
     this.onMessage("requestMaps", (client) => {
@@ -754,9 +767,14 @@ export class WorldRoom extends Room<WorldState> {
     if (Math.abs(fdx) > Math.abs(fdy)) p.dir = fdx > 0 ? "right" : "left";
     else p.dir = fdy > 0 ? "down" : "up";
 
-    const crit = Math.random() < LOOT.CRIT_CHANCE;
+    const psLv = skillLv(p, "powerStrike");
+    const ceLv = skillLv(p, "criticalEye");
+    const critChance =
+      LOOT.CRIT_CHANCE + ceLv * SKILL_EFFECT.criticalEye_critPct;
+    const crit = Math.random() < critChance;
     const baseDmg =
       (playerDamage(p.level, p.statStr) + equipBonus(p).damage) *
+      (1 + psLv * SKILL_EFFECT.powerStrike_dmgPct) *
       (buffActive(p, "damage") ? SHRINE.DAMAGE_MULT : 1);
     const dmg = baseDmg * (crit ? LOOT.CRIT_MULT : 1);
     hit.m.hp = Math.max(0, hit.m.hp - dmg);
@@ -803,9 +821,11 @@ export class WorldRoom extends Room<WorldState> {
     if (now < iframe) return;
     this.playerIFrames.set(sessionId, now + COMBAT.PLAYER_IFRAMES_MS);
 
-    const adjusted = buffActive(player, "defense")
-      ? dmg * SHRINE.DEFENSE_INCOMING_MULT
-      : dmg;
+    const isLv = skillLv(player, "ironSkin");
+    const drMult = 1 - Math.min(0.9, isLv * SKILL_EFFECT.ironSkin_drPct);
+    const adjusted =
+      (buffActive(player, "defense") ? dmg * SHRINE.DEFENSE_INCOMING_MULT : dmg) *
+      drMult;
     player.hp = Math.max(0, player.hp - adjusted);
     const fatal = player.hp <= 0;
 
@@ -1089,11 +1109,16 @@ export class WorldRoom extends Room<WorldState> {
     if (Math.abs(fdx) > Math.abs(fdy)) p.dir = fdx > 0 ? "right" : "left";
     else p.dir = fdy > 0 ? "down" : "up";
 
-    const crit = Math.random() < LOOT.CRIT_CHANCE;
+    const ceLv = skillLv(p, "criticalEye");
+    const fmLv = skillLv(p, "fireMastery");
+    const critChance =
+      LOOT.CRIT_CHANCE + ceLv * SKILL_EFFECT.criticalEye_critPct;
+    const crit = Math.random() < critChance;
     const dmg = Math.round(
       (playerDamage(p.level, p.statStr) + equipBonus(p).damage) *
         (buffActive(p, "damage") ? SHRINE.DAMAGE_MULT : 1) *
         SPELLS.FIRE_BOLT_DMG_MULT *
+        (1 + fmLv * SKILL_EFFECT.fireMastery_dmgPct) *
         (crit ? LOOT.CRIT_MULT : 1)
     );
     hit.m.hp = Math.max(0, hit.m.hp - dmg);
@@ -1342,6 +1367,29 @@ export class WorldRoom extends Room<WorldState> {
     if (stat === "mnd") p.mp = Math.min(p.maxMp, p.mp + (p.maxMp - prevMaxMp));
   }
 
+  /* ── Skill tree ──────────────────────────────────────────────────── */
+
+  private handleAllocateSkill(sessionId: string, skillId?: string) {
+    const p = this.state.players.get(sessionId);
+    if (!p || !p.alive) return;
+    if (!skillId || !SKILL_IDS.includes(skillId)) return;
+    if (p.skillPoints <= 0) return;
+    const def = getSkillDef(skillId);
+    if (!def) return;
+    const current = p.skillLevels.get(skillId) ?? 0;
+    if (current >= def.maxLevel) return;
+    p.skillLevels.set(skillId, current + 1);
+    p.skillPoints -= 1;
+    // Vigorous / Arcane Wisdom shift maxHp/maxMp → recompute and top up
+    if (skillId === "vigorous" || skillId === "arcaneWisdom") {
+      const prevMaxHp = p.maxHp;
+      const prevMaxMp = p.maxMp;
+      recomputeDerived(p);
+      if (p.maxHp > prevMaxHp) p.hp += p.maxHp - prevMaxHp;
+      if (p.maxMp > prevMaxMp) p.mp += p.maxMp - prevMaxMp;
+    }
+  }
+
   private spawnLoot(
     mapId: MapId,
     x: number,
@@ -1491,6 +1539,7 @@ export class WorldRoom extends Room<WorldState> {
       p.hp = p.maxHp;
       p.mp = p.maxMp; // full refill on level up
       p.statPoints += STATS.POINTS_PER_LEVEL;
+      p.skillPoints += 1; // 1 skill point per level
       this.broadcast("fx:levelup", {
         sessionId,
         level: p.level,
@@ -1608,6 +1657,11 @@ export class WorldRoom extends Room<WorldState> {
     for (const [qid, n] of Object.entries(c.questProgress ?? {})) {
       p.questProgress.set(qid, n);
     }
+    // Skill tree
+    p.skillPoints = c.skillPoints ?? 0;
+    for (const [sid, lv] of Object.entries(c.skillLevels ?? {})) {
+      if (SKILL_IDS.includes(sid) && lv > 0) p.skillLevels.set(sid, lv);
+    }
     return p;
   }
 
@@ -1624,6 +1678,10 @@ export class WorldRoom extends Room<WorldState> {
     const qp: Record<string, number> = {};
     p.questProgress.forEach((n, k) => {
       qp[k] = n;
+    });
+    const sk: Record<string, number> = {};
+    p.skillLevels.forEach((lv, sid) => {
+      sk[sid] = lv;
     });
     return {
       name: p.name,
@@ -1648,6 +1706,8 @@ export class WorldRoom extends Room<WorldState> {
       questProgress: qp,
       inventory: inv,
       equipment: eq,
+      skillLevels: sk,
+      skillPoints: p.skillPoints,
     };
   }
 
@@ -1786,10 +1846,13 @@ export class WorldRoom extends Room<WorldState> {
         p.moving = false;
         return;
       }
-      // Mana regen (Insight shrine boosts the rate)
+      // Mana regen (Insight shrine boosts the rate; Arcane Wisdom adds flat)
       if (p.mp < p.maxMp) {
+        const arcLv = skillLv(p, "arcaneWisdom");
+        const skillRegen = arcLv * SKILL_EFFECT.arcaneWisdom_regenPerSec * dtSec;
         const step =
-          manaRegenStep * (buffActive(p, "mana") ? SHRINE.MANA_REGEN_MULT : 1);
+          manaRegenStep * (buffActive(p, "mana") ? SHRINE.MANA_REGEN_MULT : 1) +
+          skillRegen;
         p.mp = Math.min(p.maxMp, p.mp + step);
       }
       // Vitality shrine: passive HP regen while buff is active

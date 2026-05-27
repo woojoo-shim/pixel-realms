@@ -45,6 +45,7 @@ import { PotionButton } from "../ui/PotionButton.js";
 import { SpellButton } from "../ui/SpellButton.js";
 import { NovaButton } from "../ui/NovaButton.js";
 import { CharacterPanel } from "../ui/CharacterPanel.js";
+import { SkillTreePanel } from "../ui/SkillTreePanel.js";
 import { InventoryPanel, type InventoryItemView, type EquipmentView } from "../ui/InventoryPanel.js";
 import { VendorPanel, type VendorItemView } from "../ui/VendorPanel.js";
 import { WaypointPanel } from "../ui/WaypointPanel.js";
@@ -110,6 +111,8 @@ export class WorldScene extends Phaser.Scene {
   private teleportBtn!: TeleportButton;
   private meteorBtn!: MeteorButton;
   private characterPanel!: CharacterPanel;
+  private skillTreePanel!: SkillTreePanel;
+  private kKey?: Phaser.Input.Keyboard.Key;
   private inventoryPanel!: InventoryPanel;
   private vendorPanel!: VendorPanel;
   private vendorBtn?: HTMLButtonElement;
@@ -127,6 +130,7 @@ export class WorldScene extends Phaser.Scene {
     }
   >();
   private statBtn?: HTMLButtonElement;
+  private skillBtn?: HTMLButtonElement;
   private sprites = new Map<string, RemoteSprite>();
   private monsters = new Map<string, MonsterSprite>();
   private loots = new Map<string, LootSprite>();
@@ -223,6 +227,10 @@ export class WorldScene extends Phaser.Scene {
         Phaser.Input.Keyboard.KeyCodes.C
       );
       this.cKey.on("down", () => this.toggleCharacterPanel());
+      this.kKey = this.input.keyboard.addKey(
+        Phaser.Input.Keyboard.KeyCodes.K
+      );
+      this.kKey.on("down", () => this.toggleSkillTreePanel());
       this.iKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
       this.iKey.on("down", () => this.inventoryPanel?.toggle());
 
@@ -265,6 +273,8 @@ export class WorldScene extends Phaser.Scene {
     this.potionBtn.onPress(() => this.sendHeal());
     this.characterPanel = new CharacterPanel();
     this.characterPanel.onPlus((stat) => this.sendAllocate(stat));
+    this.skillTreePanel = new SkillTreePanel();
+    this.skillTreePanel.onPlus((skillId) => this.sendAllocateSkill(skillId));
     this.inventoryPanel = new InventoryPanel();
     this.inventoryPanel.onEquip((id) =>
       this.room?.send("equip", { itemId: id })
@@ -387,6 +397,8 @@ export class WorldScene extends Phaser.Scene {
       this.buffEl?.remove();
       this.hurtEl?.remove();
       this.statBtn?.remove();
+      this.skillBtn?.remove();
+      this.skillTreePanel?.destroy();
       this.tearDownHud();
     });
 
@@ -920,6 +932,42 @@ export class WorldScene extends Phaser.Scene {
     } else if (this.statBtn) {
       this.statBtn.remove();
       this.statBtn = undefined;
+    }
+
+    // Skill-points badge — same style as stats, blue tint, sits below
+    if ((me.skillPoints ?? 0) > 0) {
+      if (!this.skillBtn) {
+        const b = document.createElement("button");
+        b.type = "button";
+        Object.assign(b.style, {
+          position: "fixed",
+          top: "140px",
+          left: "10px",
+          width: "80px",
+          padding: "6px 0",
+          background:
+            "linear-gradient(180deg, rgba(30,58,138,0.92), rgba(15,23,42,0.97))",
+          border: "2px solid rgba(96,165,250,0.95)",
+          borderRadius: "6px",
+          color: "#fde047",
+          fontFamily: "monospace",
+          fontWeight: "bold",
+          fontSize: "12px",
+          letterSpacing: "1px",
+          cursor: "pointer",
+          zIndex: "22",
+          boxShadow: "0 0 10px rgba(59,130,246,0.5)",
+          animation: "pulse-glow 1.4s infinite alternate",
+          touchAction: "manipulation",
+        } as CSSStyleDeclaration);
+        b.addEventListener("click", () => this.toggleSkillTreePanel());
+        document.body.appendChild(b);
+        this.skillBtn = b;
+      }
+      this.skillBtn.textContent = `+${me.skillPoints} SKILLS`;
+    } else if (this.skillBtn) {
+      this.skillBtn.remove();
+      this.skillBtn = undefined;
     }
 
     // HP orb
@@ -1844,6 +1892,34 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private sendAllocateSkill(skillId: string) {
+    if (!this.room) return;
+    this.room.send("allocateSkill", { skillId });
+  }
+
+  private toggleSkillTreePanel() {
+    if (this.skillTreePanel.isVisible()) this.skillTreePanel.hide();
+    else {
+      this.refreshSkillTreePanel();
+      this.skillTreePanel.show();
+    }
+  }
+
+  private refreshSkillTreePanel() {
+    if (!this.room) return;
+    const state = this.room.state as any;
+    const me = state?.players?.get?.(this.mySessionId);
+    if (!me) return;
+    const levels: Record<string, number> = {};
+    me.skillLevels?.forEach?.((lv: number, id: string) => {
+      levels[id] = lv;
+    });
+    this.skillTreePanel.update({
+      skillPoints: me.skillPoints ?? 0,
+      levels,
+    });
+  }
+
   private refreshCharacterPanel() {
     if (!this.room) return;
     const state = this.room.state as any;
@@ -2361,6 +2437,9 @@ export class WorldScene extends Phaser.Scene {
     // Keep character/inventory panels in sync while open.
     if (this.characterPanel?.isOpen() || this.inventoryPanel?.isOpen()) {
       this.refreshCharacterPanel();
+    }
+    if (this.skillTreePanel?.isVisible()) {
+      this.refreshSkillTreePanel();
     }
 
     // ── Monster title text follows sprite for champions ──────────────
