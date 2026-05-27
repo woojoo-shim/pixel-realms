@@ -371,3 +371,8 @@ export interface FxWaypointPayload {
 export * from "./skills.js";
 export type { SkillBranch, SkillDef } from "./skills.js";
 
+
+
+export * from "./tutorial.js";
+export type { TutorialStep, TutorialTrigger } from "./tutorial.js";
+

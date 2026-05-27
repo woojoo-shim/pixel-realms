@@ -73,7 +73,9 @@ import {
   rollRarity,
   SKILL_EFFECT,
   SKILL_IDS,
+  TUTORIAL_STEPS,
   getSkillDef,
+  type TutorialTrigger,
   type LootKind,
   type MapData,
   type MapId,
@@ -109,6 +111,17 @@ function buffActive(p: PlayerState, kind: ShrineKind): boolean {
 /** Get the invested level of a skill (0 if not allocated). */
 function skillLv(p: PlayerState, id: string): number {
   return p.skillLevels.get(id) ?? 0;
+}
+
+/**
+ * Advance the player past any pending tutorial step whose trigger matches.
+ * Idempotent — calling with the same trigger after it advanced once is a no-op.
+ */
+function tutorialAdvance(p: PlayerState, trigger: TutorialTrigger) {
+  const step = TUTORIAL_STEPS[p.tutorialStep];
+  if (step && step.trigger === trigger) {
+    p.tutorialStep += 1;
+  }
 }
 
 function recomputeDerived(p: PlayerState): void {
@@ -779,6 +792,7 @@ export class WorldRoom extends Room<WorldState> {
     const dmg = baseDmg * (crit ? LOOT.CRIT_MULT : 1);
     hit.m.hp = Math.max(0, hit.m.hp - dmg);
     const fatal = hit.m.hp <= 0;
+    tutorialAdvance(p, "first-attack");
 
     this.broadcast("fx:hit", {
       x: hit.m.x,
@@ -803,6 +817,7 @@ export class WorldRoom extends Room<WorldState> {
     p.potions -= 1;
     const heal = Math.ceil(p.maxHp * LOOT.POTION_HEAL_FRAC);
     p.hp = Math.min(p.maxHp, p.hp + heal);
+    tutorialAdvance(p, "first-heal");
     this.broadcast("fx:heal", {
       sessionId,
       amount: heal,
@@ -1102,6 +1117,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerCastCd.set(sessionId, now + SPELLS.FIRE_BOLT_COOLDOWN_MS);
     p.mp -= SPELLS.FIRE_BOLT_COST;
     p.castUntil = now + SPELLS.FIRE_BOLT_SWING_MS;
+    tutorialAdvance(p, "first-cast");
 
     // Face the target
     const fdx = hit.m.x - p.x;
@@ -1380,6 +1396,7 @@ export class WorldRoom extends Room<WorldState> {
     if (current >= def.maxLevel) return;
     p.skillLevels.set(skillId, current + 1);
     p.skillPoints -= 1;
+    tutorialAdvance(p, "first-skill");
     // Vigorous / Arcane Wisdom shift maxHp/maxMp → recompute and top up
     if (skillId === "vigorous" || skillId === "arcaneWisdom") {
       const prevMaxHp = p.maxHp;
@@ -1561,23 +1578,34 @@ export class WorldRoom extends Room<WorldState> {
 
   async onJoin(
     client: Client,
-    options: { username?: string; password?: string; token?: string } = {}
+    options: {
+      username?: string;
+      password?: string;
+      token?: string;
+      /** "login" requires existing account; "register" creates a new one. */
+      authMode?: "login" | "register";
+    } = {}
   ) {
     // OAuth path takes priority. Otherwise fall back to username/password.
     const auth = options.token
       ? await accountStore.loginWithToken(options.token)
       : await accountStore.loginOrRegister(
           options.username ?? "",
-          options.password ?? ""
+          options.password ?? "",
+          options.authMode ?? "login"
         );
     if (!auth.ok) {
-      // Send error to the client and close the session.
+      // Translate reason codes into UI-friendly strings.
       const reason =
         auth.reason === "bad_password"
-          ? "Wrong password for this name."
-          : auth.reason === "bad_token"
-            ? "OAuth sign-in failed — try again."
-            : "Invalid username (2-16 chars, letters/numbers/_/-).";
+          ? "비밀번호가 틀려요."
+          : auth.reason === "no_such_account"
+            ? "그런 계정 없어요. 회원가입 해주세요."
+            : auth.reason === "name_taken"
+              ? "이미 쓰는 이름이에요. 로그인 하거나 다른 이름 쓰세요."
+              : auth.reason === "bad_token"
+                ? "OAuth 로그인 실패."
+                : "이름은 2-16자, 영문/숫자/_/- 만 가능.";
       client.send("auth-error", { reason });
       client.leave(4001, reason);
       return;
@@ -1662,6 +1690,8 @@ export class WorldRoom extends Room<WorldState> {
     for (const [sid, lv] of Object.entries(c.skillLevels ?? {})) {
       if (SKILL_IDS.includes(sid) && lv > 0) p.skillLevels.set(sid, lv);
     }
+    // Tutorial
+    p.tutorialStep = c.tutorialStep ?? 0;
     return p;
   }
 
@@ -1708,6 +1738,7 @@ export class WorldRoom extends Room<WorldState> {
       equipment: eq,
       skillLevels: sk,
       skillPoints: p.skillPoints,
+      tutorialStep: p.tutorialStep,
     };
   }
 
@@ -1887,6 +1918,7 @@ export class WorldRoom extends Room<WorldState> {
       }
 
       p.moving = dx !== 0 || dy !== 0;
+      if (p.moving) tutorialAdvance(p, "moved");
 
       const stepSpeed =
         Math.max(40, playerSpeed(p.statQck) + equipBonus(p).speed) *
@@ -1930,6 +1962,10 @@ export class WorldRoom extends Room<WorldState> {
           discovered.add(portal.toMap);
           p.discoveredMaps = Array.from(discovered).join(",");
           this.portalCooldown.set(sessionId, now + PORTAL_COOLDOWN_MS);
+          // Tutorial: entering the forest for the first time
+          if (portal.toMap === "forest") {
+            tutorialAdvance(p, "entered-forest");
+          }
         }
       }
     });

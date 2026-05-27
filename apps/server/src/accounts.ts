@@ -54,6 +54,8 @@ export interface CharacterData {
   skillLevels: Record<string, number>;
   /** Unspent skill points. */
   skillPoints: number;
+  /** Onboarding step index (0 = first; once finished holds TUTORIAL_DONE). */
+  tutorialStep?: number;
 }
 
 interface Account {
@@ -92,12 +94,24 @@ export function makeStarterCharacter(name: string): CharacterData {
     equipment: {},
     skillLevels: {},
     skillPoints: 0,
+    tutorialStep: 0,
   };
 }
 
 export type LoginResult =
   | { ok: true; character: CharacterData; username: string }
-  | { ok: false; reason: "bad_password" | "invalid_name" | "bad_token" };
+  | {
+      ok: false;
+      reason:
+        | "bad_password"
+        | "invalid_name"
+        | "bad_token"
+        | "name_taken"
+        | "no_such_account";
+    };
+
+/** Auth mode chosen by the player on the menu screen. */
+export type AuthMode = "login" | "register";
 
 function hashPassword(password: string, salt: string): string {
   return createHash("sha256").update(`${password}::${salt}`).digest("hex");
@@ -113,7 +127,11 @@ function normalizeUsername(username: string): string | null {
 }
 
 interface AccountBackend {
-  loginOrRegister(usernameRaw: string, password: string): Promise<LoginResult>;
+  loginOrRegister(
+    usernameRaw: string,
+    password: string,
+    mode?: AuthMode
+  ): Promise<LoginResult>;
   loginWithToken(token: string): Promise<LoginResult>;
   saveCharacter(username: string, character: CharacterData): void;
   flushNow(): Promise<void>;
@@ -146,16 +164,22 @@ class FileBackend implements AccountBackend {
     this.dirty = false;
   }
 
-  async loginOrRegister(usernameRaw: string, password: string): Promise<LoginResult> {
+  async loginOrRegister(
+    usernameRaw: string,
+    password: string,
+    mode: AuthMode = "login"
+  ): Promise<LoginResult> {
     const u = normalizeUsername(usernameRaw);
     if (!u) return { ok: false, reason: "invalid_name" };
     const key = u.toLowerCase();
     const existing = this.accounts[key];
     if (existing) {
+      if (mode === "register") return { ok: false, reason: "name_taken" };
       if (hashPassword(password, existing.salt) !== existing.passwordHash)
         return { ok: false, reason: "bad_password" };
       return { ok: true, username: u, character: existing.character };
     }
+    if (mode === "login") return { ok: false, reason: "no_such_account" };
     const salt = randomBytes(8).toString("hex");
     const character = makeStarterCharacter(u);
     this.accounts[key] = {
@@ -219,7 +243,11 @@ class SupabaseBackend implements AccountBackend {
     console.log(`[accounts:supabase] connected to ${url}`);
   }
 
-  async loginOrRegister(usernameRaw: string, password: string): Promise<LoginResult> {
+  async loginOrRegister(
+    usernameRaw: string,
+    password: string,
+    mode: AuthMode = "login"
+  ): Promise<LoginResult> {
     const u = normalizeUsername(usernameRaw);
     if (!u) return { ok: false, reason: "invalid_name" };
     const key = u.toLowerCase();
@@ -227,6 +255,7 @@ class SupabaseBackend implements AccountBackend {
     // Try cache first
     const cached = this.cache.get(key);
     if (cached) {
+      if (mode === "register") return { ok: false, reason: "name_taken" };
       if (hashPassword(password, cached.salt) !== cached.passwordHash)
         return { ok: false, reason: "bad_password" };
       return { ok: true, username: cached.displayName, character: cached.character };
@@ -245,6 +274,7 @@ class SupabaseBackend implements AccountBackend {
     }
 
     if (data) {
+      if (mode === "register") return { ok: false, reason: "name_taken" };
       if (hashPassword(password, data.salt) !== data.password_hash)
         return { ok: false, reason: "bad_password" };
       this.cache.set(key, {
@@ -259,6 +289,8 @@ class SupabaseBackend implements AccountBackend {
         character: data.character as CharacterData,
       };
     }
+
+    if (mode === "login") return { ok: false, reason: "no_such_account" };
 
     // Register new
     const salt = randomBytes(8).toString("hex");
@@ -408,7 +440,9 @@ function makeBackend(): AccountBackend {
 const backend = makeBackend();
 
 export const accountStore = {
-  loginOrRegister: (u: string, p: string) => backend.loginOrRegister(u, p),
+  loginOrRegister: (u: string, p: string, mode: AuthMode = "login") =>
+    backend.loginOrRegister(u, p, mode),
+  loginWithToken: (token: string) => backend.loginWithToken(token),
   saveCharacter: (u: string, c: CharacterData) => backend.saveCharacter(u, c),
   flushNow: () => backend.flushNow(),
 };

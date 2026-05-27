@@ -60,4 +60,8 @@ export class PlayerState extends Schema {
   /** Equipped items keyed by slot ("weapon", "head", "chest", "ring"). */
   @type({ map: InventoryItemState }) equipment =
     new MapSchema<InventoryItemState>();
+
+  // ── Tutorial ───────────────────────────────────────────────────
+  /** Onboarding step index. 0 = first step, >= TUTORIAL_STEPS = finished. */
+  @type("number") tutorialStep: number = 0;
 }

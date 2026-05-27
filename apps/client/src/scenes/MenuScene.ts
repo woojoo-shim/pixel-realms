@@ -178,7 +178,7 @@ export class MenuScene extends Phaser.Scene {
     const passwordInput = document.createElement("input");
     passwordInput.type = "password";
     passwordInput.maxLength = 32;
-    passwordInput.placeholder = "Password (new account = sets it)";
+    passwordInput.placeholder = "Password";
     passwordInput.autocomplete = "current-password";
     Object.assign(passwordInput.style, {
       padding: "12px 18px",
@@ -357,6 +357,7 @@ export class MenuScene extends Phaser.Scene {
         roomId,
         username: finalName,
         password: finalPw,
+        authMode,
       });
     };
 
@@ -524,6 +525,70 @@ export class MenuScene extends Phaser.Scene {
     form.appendChild(oauthRow);
     form.appendChild(separator);
     form.appendChild(signedInBanner);
+    // ── LOGIN / SIGN UP tabs ──────────────────────────────────────
+    let authMode: "login" | "register" =
+      (localStorage.getItem("pr:authMode") as "login" | "register") || "login";
+    const tabs = document.createElement("div");
+    Object.assign(tabs.style, {
+      display: "flex",
+      width: "min(280px, 80vw)",
+      borderRadius: "8px",
+      overflow: "hidden",
+      border: "2px solid rgba(252,165,165,0.4)",
+    } as CSSStyleDeclaration);
+    const makeTab = (label: string, mode: "login" | "register") => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      Object.assign(b.style, {
+        flex: "1",
+        padding: "10px 0",
+        fontFamily: "monospace",
+        fontWeight: "bold",
+        fontSize: "13px",
+        letterSpacing: "2px",
+        cursor: "pointer",
+        border: "none",
+        outline: "none",
+        transition: "background 0.1s",
+        touchAction: "manipulation",
+      } as CSSStyleDeclaration);
+      b.addEventListener("click", () => {
+        authMode = mode;
+        localStorage.setItem("pr:authMode", mode);
+        refreshTabStyles();
+        refreshSubmitLabel();
+        status.textContent = "";
+      });
+      return b;
+    };
+    const loginTab = makeTab("로그인", "login");
+    const signupTab = makeTab("회원가입", "register");
+    const refreshTabStyles = () => {
+      [loginTab, signupTab].forEach((t) => {
+        const active =
+          (t === loginTab && authMode === "login") ||
+          (t === signupTab && authMode === "register");
+        t.style.background = active
+          ? "linear-gradient(180deg, rgba(127,29,29,0.92), rgba(60,10,10,0.97))"
+          : "rgba(0,0,0,0.6)";
+        t.style.color = active ? "#fff7d6" : "#94a3b8";
+      });
+    };
+    refreshTabStyles();
+    tabs.append(loginTab, signupTab);
+
+    const refreshSubmitLabel = () => {
+      soloBtn.textContent =
+        authMode === "login" ? "🛡  로그인 → 솔로 입장" : "✨  회원가입 → 솔로 입장";
+      createBtn.textContent =
+        authMode === "login"
+          ? "🌐  로그인 → 새 방 만들기"
+          : "🌐  회원가입 → 새 방 만들기";
+    };
+    refreshSubmitLabel();
+
+    form.appendChild(tabs);
     form.appendChild(nameInput);
     form.appendChild(passwordInput);
     form.appendChild(soloBtn);

@@ -33,6 +33,7 @@ import {
   expToNextLevel,
   playerDamage,
   playerSpeed,
+  TUTORIAL_STEPS,
   type LootKind,
   type MapData,
   type MapId,
@@ -158,6 +159,11 @@ export class WorldScene extends Phaser.Scene {
   private hudHpText?: HTMLSpanElement;
   private buffEl?: HTMLDivElement;
   private hurtEl?: HTMLDivElement;
+  private tutorialEl?: HTMLDivElement;
+  private tutorialIconEl?: HTMLSpanElement;
+  private tutorialTextEl?: HTMLSpanElement;
+  private tutorialStepNumEl?: HTMLSpanElement;
+  private tutorialDismissed = false;
   private hurtFadeAt = 0;
   private hudMpOrb?: HTMLDivElement;
   private hudMpFillOrb?: HTMLDivElement;
@@ -182,6 +188,7 @@ export class WorldScene extends Phaser.Scene {
   private username: string = "";
   private password: string = "";
   private token: string = "";
+  private authMode: "login" | "register" = "login";
 
   constructor() {
     super("world");
@@ -193,12 +200,14 @@ export class WorldScene extends Phaser.Scene {
     username?: string;
     password?: string;
     token?: string;
+    authMode?: "login" | "register";
   }) {
     this.mode = data?.mode ?? "quick";
     this.roomId = data?.roomId;
     this.username = data?.username ?? "";
     this.password = data?.password ?? "";
     this.token = data?.token ?? "";
+    this.authMode = data?.authMode ?? "login";
   }
 
   async create() {
@@ -399,6 +408,7 @@ export class WorldScene extends Phaser.Scene {
       this.statBtn?.remove();
       this.skillBtn?.remove();
       this.skillTreePanel?.destroy();
+      this.tutorialEl?.remove();
       this.tearDownHud();
     });
 
@@ -419,6 +429,7 @@ export class WorldScene extends Phaser.Scene {
         token: this.token,
         mode: this.mode,
         roomId: this.roomId,
+        authMode: this.authMode,
       });
       this.room = room;
       this.mySessionId = room.sessionId;
@@ -933,6 +944,9 @@ export class WorldScene extends Phaser.Scene {
       this.statBtn.remove();
       this.statBtn = undefined;
     }
+
+    // Tutorial overlay — shows current step until all done
+    this.updateTutorialOverlay(me.tutorialStep ?? 0);
 
     // Skill-points badge — same style as stats, blue tint, sits below
     if ((me.skillPoints ?? 0) > 0) {
@@ -1890,6 +1904,102 @@ export class WorldScene extends Phaser.Scene {
       this.refreshCharacterPanel();
       this.characterPanel.open();
     }
+  }
+
+  private isTouchDevice(): boolean {
+    return (
+      "ontouchstart" in window ||
+      (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0)
+    );
+  }
+
+  private updateTutorialOverlay(step: number) {
+    // Tutorial complete OR user dismissed → tear down and bail
+    if (step >= TUTORIAL_STEPS.length || this.tutorialDismissed) {
+      if (this.tutorialEl) {
+        this.tutorialEl.remove();
+        this.tutorialEl = undefined;
+      }
+      return;
+    }
+    if (!this.tutorialEl) {
+      const el = document.createElement("div");
+      Object.assign(el.style, {
+        position: "fixed",
+        top: "10px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        background:
+          "linear-gradient(180deg, rgba(15,23,42,0.92), rgba(7,11,18,0.96))",
+        border: "2px solid #fde047",
+        borderRadius: "8px",
+        padding: "8px 12px 8px 10px",
+        color: "#e7e7e7",
+        fontFamily: "monospace",
+        fontSize: "13px",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        maxWidth: "min(440px, 92vw)",
+        boxShadow: "0 4px 14px rgba(0,0,0,0.55)",
+        zIndex: "30",
+        pointerEvents: "auto",
+      } as CSSStyleDeclaration);
+      const stepNum = document.createElement("span");
+      Object.assign(stepNum.style, {
+        background: "#fde047",
+        color: "#0b1118",
+        fontWeight: "bold",
+        fontSize: "11px",
+        padding: "2px 6px",
+        borderRadius: "10px",
+        minWidth: "32px",
+        textAlign: "center",
+      } as CSSStyleDeclaration);
+      const icon = document.createElement("span");
+      Object.assign(icon.style, { fontSize: "18px" });
+      const text = document.createElement("span");
+      Object.assign(text.style, {
+        flex: "1",
+        lineHeight: "1.3",
+        color: "#fde047",
+        fontWeight: "bold",
+      });
+      const close = document.createElement("button");
+      close.type = "button";
+      close.textContent = "✕";
+      Object.assign(close.style, {
+        background: "transparent",
+        color: "#94a3b8",
+        border: "1px solid #475569",
+        borderRadius: "4px",
+        cursor: "pointer",
+        width: "22px",
+        height: "22px",
+        fontSize: "11px",
+        fontFamily: "inherit",
+        marginLeft: "4px",
+      } as CSSStyleDeclaration);
+      close.addEventListener("click", () => {
+        this.tutorialDismissed = true;
+        this.tutorialEl?.remove();
+        this.tutorialEl = undefined;
+      });
+      el.append(stepNum, icon, text, close);
+      document.body.append(el);
+      this.tutorialEl = el;
+      this.tutorialStepNumEl = stepNum;
+      this.tutorialIconEl = icon;
+      this.tutorialTextEl = text;
+    }
+    const def = TUTORIAL_STEPS[step];
+    if (!def) return;
+    const touch = this.isTouchDevice();
+    if (this.tutorialStepNumEl)
+      this.tutorialStepNumEl.textContent = `${step + 1}/${TUTORIAL_STEPS.length}`;
+    if (this.tutorialIconEl) this.tutorialIconEl.textContent = def.icon;
+    if (this.tutorialTextEl)
+      this.tutorialTextEl.textContent = touch ? def.mobile : def.pc;
   }
 
   private sendAllocateSkill(skillId: string) {
