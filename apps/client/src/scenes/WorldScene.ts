@@ -164,6 +164,7 @@ export class WorldScene extends Phaser.Scene {
   private tutorialTextEl?: HTMLSpanElement;
   private tutorialStepNumEl?: HTMLSpanElement;
   private tutorialDismissed = false;
+  private sideStack?: HTMLDivElement;
   private hurtFadeAt = 0;
   private hudMpOrb?: HTMLDivElement;
   private hudMpFillOrb?: HTMLDivElement;
@@ -353,26 +354,65 @@ export class WorldScene extends Phaser.Scene {
     document.body.appendChild(qb);
     this.questBtn = qb;
 
+    // Global stylesheet — D2-themed utility classes shared by all UI bits.
+    if (!document.getElementById("pr-ui-style")) {
+      const style = document.createElement("style");
+      style.id = "pr-ui-style";
+      style.textContent = `
+        @keyframes pr-badge-pulse {
+          0%, 100% { box-shadow: 0 0 6px rgba(252,211,77,0.35); }
+          50%      { box-shadow: 0 0 14px rgba(252,211,77,0.85); }
+        }
+        .pr-btn {
+          font-family: monospace;
+          color: #f3e9c6;
+          background: linear-gradient(180deg, rgba(30,20,12,0.92), rgba(12,8,5,0.96));
+          border: 1px solid rgba(180,140,80,0.6);
+          border-radius: 6px;
+          cursor: pointer;
+          touch-action: manipulation;
+          transition: border-color 120ms, transform 80ms;
+        }
+        .pr-btn:hover  { border-color: rgba(252,211,77,0.9); }
+        .pr-btn:active { transform: translateY(1px); }
+        .pr-icon-btn {
+          width: 38px; height: 38px;
+          font-size: 18px;
+          display: flex; align-items: center; justify-content: center;
+          z-index: 22;
+        }
+        .pr-side-stack {
+          position: fixed;
+          top: 96px; left: 10px;
+          display: flex; flex-direction: column; gap: 6px;
+          z-index: 22;
+        }
+        .pr-badge {
+          width: 78px;
+          padding: 6px 0;
+          font-size: 11px;
+          font-weight: bold;
+          letter-spacing: 1px;
+          text-align: center;
+          color: #fde047;
+          background: linear-gradient(180deg, rgba(30,20,12,0.96), rgba(12,8,5,0.98));
+          border: 1px solid #fde047;
+          animation: pr-badge-pulse 1.8s ease-in-out infinite;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     // Persistent on-screen bag button (mobile + desktop)
     const bagBtn = document.createElement("button");
     bagBtn.type = "button";
     bagBtn.textContent = "🎒";
     bagBtn.title = "Inventory (I)";
+    bagBtn.className = "pr-btn pr-icon-btn";
     Object.assign(bagBtn.style, {
       position: "fixed",
       top: "10px",
       left: "calc(50% + 90px)",
-      width: "44px",
-      height: "44px",
-      background:
-        "linear-gradient(180deg, rgba(60,40,20,0.9), rgba(30,18,8,0.95))",
-      border: "2px solid rgba(180,120,60,0.9)",
-      borderRadius: "8px",
-      color: "#fde047",
-      fontSize: "22px",
-      cursor: "pointer",
-      zIndex: "22",
-      touchAction: "manipulation",
     } as CSSStyleDeclaration);
     bagBtn.addEventListener("click", () => this.inventoryPanel.toggle());
     document.body.appendChild(bagBtn);
@@ -899,44 +939,23 @@ export class WorldScene extends Phaser.Scene {
       });
     }
 
+    // Side stack — host for stat/skill badges so they share one column
+    if (!this.sideStack) {
+      const stack = document.createElement("div");
+      stack.className = "pr-side-stack";
+      document.body.appendChild(stack);
+      this.sideStack = stack;
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => stack.remove());
+    }
+
     // Stat-points badge — only shown when there are unspent points
     if (me.statPoints > 0) {
       if (!this.statBtn) {
         const b = document.createElement("button");
         b.type = "button";
-        Object.assign(b.style, {
-          position: "fixed",
-          top: "100px",
-          left: "10px",
-          width: "80px",
-          padding: "6px 0",
-          background:
-            "linear-gradient(180deg, rgba(127,29,29,0.92), rgba(60,10,10,0.97))",
-          border: "2px solid rgba(248,113,113,0.95)",
-          borderRadius: "6px",
-          color: "#fde047",
-          fontFamily: "monospace",
-          fontWeight: "bold",
-          fontSize: "12px",
-          letterSpacing: "1px",
-          cursor: "pointer",
-          zIndex: "22",
-          boxShadow: "0 0 10px rgba(220,38,38,0.5)",
-          animation: "pulse-glow 1.4s infinite alternate",
-          touchAction: "manipulation",
-        } as CSSStyleDeclaration);
+        b.className = "pr-btn pr-badge";
         b.addEventListener("click", () => this.toggleCharacterPanel());
-        document.body.appendChild(b);
-        // Inject keyframes once
-        if (!document.getElementById("pr-pulse-style")) {
-          const style = document.createElement("style");
-          style.id = "pr-pulse-style";
-          style.textContent = `@keyframes pulse-glow {
-            from { box-shadow: 0 0 8px rgba(220,38,38,0.4); }
-            to   { box-shadow: 0 0 18px rgba(252,165,165,0.85); }
-          }`;
-          document.head.appendChild(style);
-        }
+        this.sideStack.appendChild(b);
         this.statBtn = b;
       }
       this.statBtn.textContent = `+${me.statPoints} STATS`;
@@ -948,34 +967,14 @@ export class WorldScene extends Phaser.Scene {
     // Tutorial overlay — shows current step until all done
     this.updateTutorialOverlay(me.tutorialStep ?? 0);
 
-    // Skill-points badge — same style as stats, blue tint, sits below
+    // Skill-points badge — same unified style as the stats one
     if ((me.skillPoints ?? 0) > 0) {
       if (!this.skillBtn) {
         const b = document.createElement("button");
         b.type = "button";
-        Object.assign(b.style, {
-          position: "fixed",
-          top: "140px",
-          left: "10px",
-          width: "80px",
-          padding: "6px 0",
-          background:
-            "linear-gradient(180deg, rgba(30,58,138,0.92), rgba(15,23,42,0.97))",
-          border: "2px solid rgba(96,165,250,0.95)",
-          borderRadius: "6px",
-          color: "#fde047",
-          fontFamily: "monospace",
-          fontWeight: "bold",
-          fontSize: "12px",
-          letterSpacing: "1px",
-          cursor: "pointer",
-          zIndex: "22",
-          boxShadow: "0 0 10px rgba(59,130,246,0.5)",
-          animation: "pulse-glow 1.4s infinite alternate",
-          touchAction: "manipulation",
-        } as CSSStyleDeclaration);
+        b.className = "pr-btn pr-badge";
         b.addEventListener("click", () => this.toggleSkillTreePanel());
-        document.body.appendChild(b);
+        this.sideStack.appendChild(b);
         this.skillBtn = b;
       }
       this.skillBtn.textContent = `+${me.skillPoints} SKILLS`;
