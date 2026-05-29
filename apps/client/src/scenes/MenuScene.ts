@@ -158,7 +158,7 @@ export class MenuScene extends Phaser.Scene {
     const nameInput = document.createElement("input");
     nameInput.value = savedName;
     nameInput.maxLength = 16;
-    nameInput.placeholder = "Username (2-16 chars)";
+    nameInput.placeholder = "이름 (2~16자)";
     nameInput.autocomplete = "username";
     Object.assign(nameInput.style, {
       padding: "12px 18px",
@@ -178,7 +178,7 @@ export class MenuScene extends Phaser.Scene {
     const passwordInput = document.createElement("input");
     passwordInput.type = "password";
     passwordInput.maxLength = 32;
-    passwordInput.placeholder = "Password";
+    passwordInput.placeholder = "비밀번호";
     passwordInput.autocomplete = "current-password";
     Object.assign(passwordInput.style, {
       padding: "12px 18px",
@@ -237,12 +237,18 @@ export class MenuScene extends Phaser.Scene {
 
     const soloBtn = document.createElement("button");
     soloBtn.type = "button";
-    soloBtn.textContent = "🛡  PLAY SOLO";
+    soloBtn.textContent = "▶  시작";
     styleBtn(soloBtn, "primary");
+    // Give the main CTA more visual weight than the rest
+    Object.assign(soloBtn.style, {
+      padding: "16px 22px",
+      fontSize: "clamp(15px, 3.4vw, 19px)",
+      letterSpacing: "0.3em",
+    } as CSSStyleDeclaration);
 
     const createBtn = document.createElement("button");
     createBtn.type = "button";
-    createBtn.textContent = "✨  CREATE ROOM";
+    createBtn.textContent = "✨  새 방 만들기";
     styleBtn(createBtn, "ghost");
 
     /* Join row: input + button */
@@ -254,7 +260,7 @@ export class MenuScene extends Phaser.Scene {
     } as CSSStyleDeclaration);
 
     const roomInput = document.createElement("input");
-    roomInput.placeholder = "Room ID";
+    roomInput.placeholder = "방 코드";
     roomInput.maxLength = 12;
     Object.assign(roomInput.style, {
       flex: "1",
@@ -273,7 +279,7 @@ export class MenuScene extends Phaser.Scene {
 
     const joinBtn = document.createElement("button");
     joinBtn.type = "button";
-    joinBtn.textContent = "JOIN";
+    joinBtn.textContent = "입장";
     Object.assign(joinBtn.style, {
       padding: "10px 18px",
       background: "linear-gradient(180deg, rgba(30,58,138,0.92), rgba(8,20,60,0.95))",
@@ -305,14 +311,14 @@ export class MenuScene extends Phaser.Scene {
       if (this.oauthToken) {
         if (mode === "join" && (!roomId || roomId.length < 3)) {
           status.style.color = "#fca5a5";
-          status.textContent = "Enter a room ID";
+          status.textContent = "방 코드를 입력하세요";
           return;
         }
         soloBtn.disabled = true;
         createBtn.disabled = true;
         joinBtn.disabled = true;
         status.style.color = "#a8a29e";
-        status.textContent = "Entering…";
+        status.textContent = "입장 중…";
         this.scene.start("world", {
           mode,
           roomId,
@@ -327,18 +333,18 @@ export class MenuScene extends Phaser.Scene {
       const finalPw = passwordInput.value;
       if (!/^[a-zA-Z0-9_-]{2,16}$/.test(finalName)) {
         status.style.color = "#fca5a5";
-        status.textContent = "Username: 2-16 chars (letters/numbers/_/-)";
+        status.textContent = "이름: 영문/숫자 2~16자만 (한글 X)";
         return;
       }
       if (!finalPw) {
         status.style.color = "#fca5a5";
-        status.textContent = "Enter a password";
+        status.textContent = "비밀번호를 입력하세요";
         return;
       }
       localStorage.setItem("pr:name", finalName);
       if (mode === "join" && (!roomId || roomId.length < 3)) {
         status.style.color = "#fca5a5";
-        status.textContent = "Enter a room ID";
+        status.textContent = "방 코드를 입력하세요";
         return;
       }
       // Lock buttons during transition
@@ -348,10 +354,10 @@ export class MenuScene extends Phaser.Scene {
       status.style.color = "#a8a29e";
       status.textContent =
         mode === "solo"
-          ? "Entering solo realm…"
+          ? "입장 중…"
           : mode === "create"
-            ? "Creating room…"
-            : `Joining ${roomId?.toUpperCase()}…`;
+            ? "방 만드는 중…"
+            : `${roomId?.toUpperCase()} 방 입장 중…`;
       this.scene.start("world", {
         mode,
         roomId,
@@ -525,75 +531,72 @@ export class MenuScene extends Phaser.Scene {
     form.appendChild(oauthRow);
     form.appendChild(separator);
     form.appendChild(signedInBanner);
-    // ── LOGIN / SIGN UP tabs ──────────────────────────────────────
-    let authMode: "login" | "register" =
-      (localStorage.getItem("pr:authMode") as "login" | "register") || "login";
-    const tabs = document.createElement("div");
-    Object.assign(tabs.style, {
-      display: "flex",
-      width: "min(280px, 80vw)",
-      borderRadius: "8px",
-      overflow: "hidden",
-      border: "2px solid rgba(252,165,165,0.4)",
+    // No login/register tabs — server uses "auto" mode (login if name exists,
+    // else create a new account). One unified flow, no decision burden.
+    const authMode: "auto" = "auto";
+
+    // ── Hint line ─────────────────────────────────────────────────
+    const hint = document.createElement("div");
+    hint.textContent =
+      "처음이면 이름+비밀번호를 정하세요. 다시 들어올 때 같은 걸 입력하면 캐릭터가 그대로 살아납니다.";
+    Object.assign(hint.style, {
+      fontSize: "11px",
+      color: "#9ca3af",
+      maxWidth: "min(280px, 80vw)",
+      textAlign: "center",
+      lineHeight: "1.45",
+      margin: "-4px 0 -2px 0",
     } as CSSStyleDeclaration);
-    const makeTab = (label: string, mode: "login" | "register") => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      Object.assign(b.style, {
-        flex: "1",
-        padding: "10px 0",
-        fontFamily: "monospace",
-        fontWeight: "bold",
-        fontSize: "13px",
-        letterSpacing: "2px",
-        cursor: "pointer",
-        border: "none",
-        outline: "none",
-        transition: "background 0.1s",
-        touchAction: "manipulation",
-      } as CSSStyleDeclaration);
-      b.addEventListener("click", () => {
-        authMode = mode;
-        localStorage.setItem("pr:authMode", mode);
-        refreshTabStyles();
-        refreshSubmitLabel();
-        status.textContent = "";
-      });
-      return b;
-    };
-    const loginTab = makeTab("로그인", "login");
-    const signupTab = makeTab("회원가입", "register");
-    const refreshTabStyles = () => {
-      [loginTab, signupTab].forEach((t) => {
-        const active =
-          (t === loginTab && authMode === "login") ||
-          (t === signupTab && authMode === "register");
-        t.style.background = active
-          ? "linear-gradient(180deg, rgba(127,29,29,0.92), rgba(60,10,10,0.97))"
-          : "rgba(0,0,0,0.6)";
-        t.style.color = active ? "#fff7d6" : "#94a3b8";
-      });
-    };
-    refreshTabStyles();
-    tabs.append(loginTab, signupTab);
 
-    const refreshSubmitLabel = () => {
-      soloBtn.textContent =
-        authMode === "login" ? "🛡  로그인 → 솔로 입장" : "✨  회원가입 → 솔로 입장";
-      createBtn.textContent =
-        authMode === "login"
-          ? "🌐  로그인 → 새 방 만들기"
-          : "🌐  회원가입 → 새 방 만들기";
-    };
-    refreshSubmitLabel();
+    // ── Collapsible friend-mode section ───────────────────────────
+    const friendToggle = document.createElement("button");
+    friendToggle.type = "button";
+    friendToggle.textContent = "▸ 친구랑 플레이";
+    Object.assign(friendToggle.style, {
+      background: "transparent",
+      border: "none",
+      color: "#94a3b8",
+      fontSize: "12px",
+      fontFamily: "monospace",
+      cursor: "pointer",
+      padding: "4px 8px",
+      letterSpacing: "1px",
+      touchAction: "manipulation",
+    } as CSSStyleDeclaration);
 
-    form.appendChild(tabs);
+    const friendBox = document.createElement("div");
+    Object.assign(friendBox.style, {
+      display: "none",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "10px",
+      width: "min(280px, 80vw)",
+      padding: "10px",
+      border: "1px dashed rgba(252,165,165,0.35)",
+      borderRadius: "8px",
+      background: "rgba(0,0,0,0.35)",
+    } as CSSStyleDeclaration);
+    const friendLabel = document.createElement("div");
+    friendLabel.textContent = "여러 명이 같이 놀고 싶다면";
+    Object.assign(friendLabel.style, {
+      fontSize: "10px",
+      color: "#94a3b8",
+      letterSpacing: "1px",
+    } as CSSStyleDeclaration);
+    friendBox.append(friendLabel, createBtn, joinRow);
+
+    friendToggle.addEventListener("click", () => {
+      const open = friendBox.style.display !== "none";
+      friendBox.style.display = open ? "none" : "flex";
+      friendToggle.textContent = open ? "▸ 친구랑 플레이" : "▾ 친구랑 플레이";
+    });
+
     form.appendChild(nameInput);
     form.appendChild(passwordInput);
     form.appendChild(soloBtn);
-    form.appendChild(createBtn);
-    form.appendChild(joinRow);
+    form.appendChild(hint);
+    form.appendChild(friendToggle);
+    form.appendChild(friendBox);
     form.appendChild(status);
 
     div.appendChild(title);

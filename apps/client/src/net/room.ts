@@ -14,8 +14,8 @@ export interface JoinOptions {
   password: string;
   /** Supabase OAuth access token (Google/GitHub/Discord). Takes priority. */
   token?: string;
-  /** Whether to log in to an existing account or register a new one. */
-  authMode?: "login" | "register";
+  /** "auto" lets the server pick (login if name exists, else register). */
+  authMode?: "login" | "register" | "auto";
   mode: JoinMode;
   /** Room id when mode === "join". */
   roomId?: string;
@@ -37,7 +37,7 @@ export async function joinWorld(opts: JoinOptions): Promise<JoinResult> {
   } else {
     payload.username = opts.username;
     payload.password = opts.password;
-    payload.authMode = opts.authMode ?? "login";
+    payload.authMode = opts.authMode ?? "auto";
   }
 
   let room: Room;

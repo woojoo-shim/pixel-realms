@@ -111,7 +111,7 @@ export type LoginResult =
     };
 
 /** Auth mode chosen by the player on the menu screen. */
-export type AuthMode = "login" | "register";
+export type AuthMode = "login" | "register" | "auto";
 
 function hashPassword(password: string, salt: string): string {
   return createHash("sha256").update(`${password}::${salt}`).digest("hex");
@@ -274,6 +274,7 @@ class SupabaseBackend implements AccountBackend {
     }
 
     if (data) {
+      // "auto" mode logs in on existing accounts; only strict "register" rejects.
       if (mode === "register") return { ok: false, reason: "name_taken" };
       if (hashPassword(password, data.salt) !== data.password_hash)
         return { ok: false, reason: "bad_password" };
@@ -290,6 +291,7 @@ class SupabaseBackend implements AccountBackend {
       };
     }
 
+    // Account doesn't exist → strict login fails; register & auto fall through to create.
     if (mode === "login") return { ok: false, reason: "no_such_account" };
 
     // Register new

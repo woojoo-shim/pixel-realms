@@ -1618,7 +1618,7 @@ export class WorldRoom extends Room<WorldState> {
     });
     if (duplicate) {
       client.send("auth-error", {
-        reason: "This character is already in the world.",
+        reason: "이 캐릭터는 이미 다른 곳에서 접속 중이에요.",
       });
       client.leave(4002, "duplicate session");
       return;
