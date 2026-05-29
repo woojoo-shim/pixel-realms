@@ -164,6 +164,13 @@ export class WorldScene extends Phaser.Scene {
   private tutorialTextEl?: HTMLSpanElement;
   private tutorialStepNumEl?: HTMLSpanElement;
   private tutorialDismissed = false;
+
+  // ── Juice: kill streak / boss banner ───────────────────────────
+  private killStreakCount = 0;
+  /** Streak resets if no kills within this many ms. */
+  private killStreakResetAt = 0;
+  private killStreakBanner?: HTMLDivElement;
+  private bossesSeen = new Set<string>(); // monster ids we've already banner'd
   private sideStack?: HTMLDivElement;
   private hurtFadeAt = 0;
   private hudMpOrb?: HTMLDivElement;
@@ -450,6 +457,7 @@ export class WorldScene extends Phaser.Scene {
       this.skillBtn?.remove();
       this.skillTreePanel?.destroy();
       this.tutorialEl?.remove();
+      this.killStreakBanner?.remove();
       this.tearDownHud();
     });
 
@@ -1248,10 +1256,19 @@ export class WorldScene extends Phaser.Scene {
 
   private showHitFx(msg: FxHitPayload) {
     if (this.currentMap == null) return;
+    const isMyHit = msg.target === "monster"; // any monster hit credited as juice for me
     if (msg.target === "monster") {
       const m = this.monsters.get(msg.targetId);
       if (!m || m.mapId !== this.currentMap) return;
       this.flashSprite(m.sprite, 0xff5252);
+      // Hitstop on monster kill — brief slow-motion makes kills feel weighty
+      if (msg.fatal) {
+        this.hitstop(70);
+        this.cameras.main.shake(160, 0.008);
+        this.bumpKillStreak();
+      } else if (msg.crit) {
+        this.cameras.main.shake(80, 0.005);
+      }
     } else {
       const s = this.sprites.get(msg.targetId);
       if (!s || s.mapId !== this.currentMap) return;
@@ -1259,6 +1276,7 @@ export class WorldScene extends Phaser.Scene {
       if (msg.targetId === this.mySessionId) {
         this.shakeCamera();
         this.flashHurtVignette(msg.dmg);
+        if (msg.fatal) this.cameras.main.shake(420, 0.018);
       }
     }
     this.spawnDamageNumber(
@@ -1268,6 +1286,103 @@ export class WorldScene extends Phaser.Scene {
       msg.target === "player",
       !!msg.crit
     );
+    void isMyHit;
+  }
+
+  /** Brief slow-motion — pauses physics/tweens for `ms` then resumes. */
+  private hitstop(ms: number) {
+    const cur = this.tweens.timeScale;
+    this.tweens.timeScale = 0.08;
+    this.time.delayedCall(ms, () => {
+      this.tweens.timeScale = cur;
+    });
+  }
+
+  private bumpKillStreak() {
+    const now = Date.now();
+    // Reset streak if more than 4s since last kill
+    if (now > this.killStreakResetAt) this.killStreakCount = 0;
+    this.killStreakCount += 1;
+    this.killStreakResetAt = now + 4000;
+    if (this.killStreakCount < 2) return; // only show from 2+
+    this.showKillStreakBanner(this.killStreakCount);
+  }
+
+  private showKillStreakBanner(n: number) {
+    if (!this.killStreakBanner) {
+      const b = document.createElement("div");
+      Object.assign(b.style, {
+        position: "fixed",
+        top: "30%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        color: "#fde047",
+        fontFamily: "monospace",
+        fontWeight: "bold",
+        textShadow:
+          "0 0 12px rgba(220,38,38,0.9), 0 0 22px rgba(220,38,38,0.6), 0 2px 4px #000",
+        letterSpacing: "3px",
+        pointerEvents: "none",
+        zIndex: "40",
+      } as CSSStyleDeclaration);
+      document.body.append(b);
+      this.killStreakBanner = b;
+    }
+    const b = this.killStreakBanner;
+    const size = Math.min(64, 22 + n * 4);
+    b.style.fontSize = `${size}px`;
+    b.textContent = `${n} KILLS!`;
+    b.style.opacity = "1";
+    b.style.transform = "translate(-50%, -50%) scale(0.4)";
+    b.style.transition = "transform 220ms cubic-bezier(.2,1.6,.4,1)";
+    requestAnimationFrame(() => {
+      b.style.transform = "translate(-50%, -50%) scale(1)";
+    });
+    // fade out
+    if ((b as any)._fadeTimer) clearTimeout((b as any)._fadeTimer);
+    (b as any)._fadeTimer = setTimeout(() => {
+      b.style.transition = "opacity 380ms ease, transform 380ms ease";
+      b.style.opacity = "0";
+      b.style.transform = "translate(-50%, -50%) scale(1.2)";
+    }, 700);
+  }
+
+  private maybeShowBossBanner(id: string, m: MonsterSprite) {
+    if (!m.boss || this.bossesSeen.has(id)) return;
+    if (m.mapId !== this.currentMap) return;
+    this.bossesSeen.add(id);
+    const subtitle = m.title?.text ?? "BOSS";
+    const banner = document.createElement("div");
+    Object.assign(banner.style, {
+      position: "fixed",
+      top: "22%",
+      left: "0",
+      right: "0",
+      textAlign: "center",
+      color: "#fde047",
+      fontFamily: "monospace",
+      fontSize: "min(40px, 8vmin)",
+      fontWeight: "bold",
+      letterSpacing: "4px",
+      textShadow:
+        "0 0 14px rgba(220,38,38,0.95), 0 0 28px rgba(120,0,0,0.7), 0 3px 6px #000",
+      pointerEvents: "none",
+      zIndex: "40",
+      transform: "translateX(-100vw)",
+      transition: "transform 480ms cubic-bezier(.15,1.4,.3,1), opacity 600ms ease",
+    } as CSSStyleDeclaration);
+    banner.innerHTML = `<div style="font-size:0.5em;letter-spacing:8px;color:#fda4af;margin-bottom:4px">BOSS ENCOUNTER</div>${subtitle}`;
+    document.body.append(banner);
+    requestAnimationFrame(() => {
+      banner.style.transform = "translateX(0)";
+    });
+    setTimeout(() => {
+      banner.style.opacity = "0";
+      banner.style.transform = "translateX(100vw)";
+    }, 1800);
+    setTimeout(() => banner.remove(), 2600);
+    // Dramatic shake
+    this.cameras.main.shake(360, 0.012);
   }
 
   private showPickupFx(msg: FxPickupPayload) {
@@ -2489,7 +2604,8 @@ export class WorldScene extends Phaser.Scene {
       s.label.y = s.sprite.y - PLAYER.SIZE / 2 - 4;
     });
 
-    this.monsters.forEach((m) => {
+    const meSprite = this.sprites.get(this.mySessionId)?.sprite;
+    this.monsters.forEach((m, mid) => {
       m.sprite.x += (m.targetX - m.sprite.x) * t;
       m.sprite.y += (m.targetY - m.sprite.y) * t;
       m.sprite.setDepth(m.sprite.y);
@@ -2499,6 +2615,11 @@ export class WorldScene extends Phaser.Scene {
       m.hpBg.y = hpY;
       m.hpFill.x = m.sprite.x - 10;
       m.hpFill.y = hpY;
+      // Boss banner — first time you get within 240px of a boss
+      if (m.boss && meSprite && m.mapId === this.currentMap) {
+        const d = Math.hypot(m.sprite.x - meSprite.x, m.sprite.y - meSprite.y);
+        if (d < 240) this.maybeShowBossBanner(mid, m);
+      }
     });
 
     // ── Pointer / mouse input (PC only — touch uses on-screen buttons) ─
