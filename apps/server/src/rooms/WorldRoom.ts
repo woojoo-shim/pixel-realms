@@ -216,6 +216,8 @@ export class WorldRoom extends Room<WorldState> {
   private itemInstIdSeq = 0;
   /** sessionId → username, for persistence on leave. */
   private sessionAccount = new Map<string, string>();
+  /** Sessions awaiting character creation (display name + color). */
+  private needsCharacter = new Set<string>();
   private saveTicker: NodeJS.Timeout | null = null;
   /** TTL bookkeeping: lootId → epoch ms when it despawns. */
   private lootDespawn = new Map<string, number>();
@@ -290,6 +292,12 @@ export class WorldRoom extends Room<WorldState> {
     this.onMessage<{ skillId: string }>("allocateSkill", (client, msg) => {
       this.handleAllocateSkill(client.sessionId, msg?.skillId);
     });
+    this.onMessage<{ name: string; colorHue?: number }>(
+      "createCharacter",
+      (client, msg) => {
+        this.handleCreateCharacter(client, msg?.name, msg?.colorHue);
+      }
+    );
 
     this.onMessage("requestMaps", (client) => {
       client.send("maps", this.serializeMaps());
@@ -1407,6 +1415,39 @@ export class WorldRoom extends Room<WorldState> {
     }
   }
 
+  /* ── Character creation ──────────────────────────────────────────── */
+
+  private handleCreateCharacter(
+    client: Client,
+    nameRaw?: string,
+    colorHue?: number
+  ) {
+    const sessionId = client.sessionId;
+    if (!this.needsCharacter.has(sessionId)) return;
+    const p = this.state.players.get(sessionId);
+    if (!p) return;
+    const name = String(nameRaw ?? "").trim().slice(0, 16);
+    // 2-16 chars; allow Unicode letters/numbers/space/_/-
+    if (!/^[\p{L}\p{N} _-]{2,16}$/u.test(name)) {
+      client.send("character-error", {
+        reason: "이름은 2~16자 (글자/숫자/공백/_/-)",
+      });
+      return;
+    }
+    const hue = Number.isFinite(colorHue)
+      ? Math.max(0, Math.min(360, colorHue!))
+      : 170;
+    p.name = name;
+    p.colorHue = hue;
+    this.needsCharacter.delete(sessionId);
+    client.send("character-created", { name, colorHue: hue });
+    // Persist immediately — the user just made an important choice.
+    const username = this.sessionAccount.get(sessionId);
+    if (username) {
+      void accountStore.saveCharacter(username, this.serializePlayer(p));
+    }
+  }
+
   private spawnLoot(
     mapId: MapId,
     x: number,
@@ -1632,6 +1673,13 @@ export class WorldRoom extends Room<WorldState> {
       lastSeq: 0,
     });
 
+    // Brand-new accounts: displayName === "" → tell client to show
+    // the character creation modal before letting them play.
+    if (auth.character.displayName === "") {
+      this.needsCharacter.add(client.sessionId);
+      client.send("needs-character", { suggested: auth.username });
+    }
+
     console.log(
       `[WorldRoom] +${player.name} (${client.sessionId}) → ${player.mapId} — ${this.state.players.size} players`
     );
@@ -1692,6 +1740,13 @@ export class WorldRoom extends Room<WorldState> {
     }
     // Tutorial
     p.tutorialStep = c.tutorialStep ?? 0;
+    // Character appearance + display name override.
+    // Legacy accounts (displayName === undefined) keep their account name.
+    // Brand-new accounts (displayName === "") will be sent "needs-character".
+    if (typeof c.displayName === "string" && c.displayName.length > 0) {
+      p.name = c.displayName;
+    }
+    p.colorHue = c.colorHue ?? 170;
     return p;
   }
 
@@ -1739,6 +1794,8 @@ export class WorldRoom extends Room<WorldState> {
       skillLevels: sk,
       skillPoints: p.skillPoints,
       tutorialStep: p.tutorialStep,
+      displayName: p.name,
+      colorHue: p.colorHue,
     };
   }
 
@@ -1750,6 +1807,7 @@ export class WorldRoom extends Room<WorldState> {
       accountStore.saveCharacter(username, this.serializePlayer(p));
     }
     this.sessionAccount.delete(client.sessionId);
+    this.needsCharacter.delete(client.sessionId);
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
     this.portalCooldown.delete(client.sessionId);

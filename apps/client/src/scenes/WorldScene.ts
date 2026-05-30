@@ -69,6 +69,35 @@ interface RemoteSprite {
   swing?: Phaser.GameObjects.Graphics;
 }
 
+/**
+ * Convert an HSL hue (degrees) into a hex tint that lightly colorizes the
+ * player sprite. Saturation/lightness fixed so all hues read clearly on the
+ * pixel sprite without washing it out.
+ */
+function hueToTint(hue: number): number {
+  const h = ((hue % 360) + 360) % 360;
+  // s=0.55, l=0.65 — soft pastel-ish wash that keeps sprite features readable
+  const s = 0.55;
+  const l = 0.65;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = h / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (hp < 1) [r, g, b] = [c, x, 0];
+  else if (hp < 2) [r, g, b] = [x, c, 0];
+  else if (hp < 3) [r, g, b] = [0, c, x];
+  else if (hp < 4) [r, g, b] = [0, x, c];
+  else if (hp < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const m = l - c / 2;
+  const R = Math.round((r + m) * 255);
+  const G = Math.round((g + m) * 255);
+  const B = Math.round((b + m) * 255);
+  return (R << 16) | (G << 8) | B;
+}
+
 interface MonsterSprite {
   sprite: Phaser.GameObjects.Image;
   hpBg: Phaser.GameObjects.Rectangle;
@@ -164,6 +193,10 @@ export class WorldScene extends Phaser.Scene {
   private tutorialTextEl?: HTMLSpanElement;
   private tutorialStepNumEl?: HTMLSpanElement;
   private tutorialDismissed = false;
+
+  // ── Character creation modal ──────────────────────────────────
+  private charCreateEl?: HTMLDivElement;
+  private charCreateErrEl?: HTMLDivElement;
 
   // ── Juice: kill streak / boss banner ───────────────────────────
   private killStreakCount = 0;
@@ -458,6 +491,7 @@ export class WorldScene extends Phaser.Scene {
       this.skillTreePanel?.destroy();
       this.tutorialEl?.remove();
       this.killStreakBanner?.remove();
+      this.charCreateEl?.remove();
       this.tearDownHud();
     });
 
@@ -487,6 +521,15 @@ export class WorldScene extends Phaser.Scene {
       // followed by the server closing the socket.
       room.onMessage("auth-error", (msg: { reason: string }) => {
         alert(msg.reason ?? "Login failed.");
+      });
+      room.onMessage("needs-character", (msg: { suggested?: string }) =>
+        this.showCharacterCreateModal(room, msg?.suggested ?? "")
+      );
+      room.onMessage("character-created", () => {
+        this.dismissCharacterCreateModal();
+      });
+      room.onMessage("character-error", (msg: { reason: string }) => {
+        this.setCharacterCreateError(msg?.reason ?? "");
       });
       room.onLeave((code) => {
         if (code === 4001 || code === 4002) {
@@ -1537,6 +1580,7 @@ export class WorldScene extends Phaser.Scene {
         isMe ? "player-self" : "player-other"
       );
       sprite.setDepth(player.y);
+      sprite.setTint(hueToTint(player.colorHue ?? 170));
 
       const label = this.add
         .text(player.x, player.y - 20, player.name, {
@@ -1584,6 +1628,10 @@ export class WorldScene extends Phaser.Scene {
           this.playSwingFx(s, player.dir as string);
         }
         s.prevHp = player.hp;
+
+        // Live tint + name updates (e.g. after char creation)
+        s.sprite.setTint(hueToTint(player.colorHue ?? 170));
+        if (s.label.text !== player.name) s.label.setText(player.name);
 
         // Death dimming
         s.sprite.setAlpha(player.alive ? 1 : 0.4);
@@ -2019,6 +2067,193 @@ export class WorldScene extends Phaser.Scene {
       this.refreshCharacterPanel();
       this.characterPanel.open();
     }
+  }
+
+  /* ── Character creation modal ──────────────────────────────────── */
+
+  private showCharacterCreateModal(room: Room, suggestedName: string) {
+    if (this.charCreateEl) return;
+    const overlay = document.createElement("div");
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      background:
+        "radial-gradient(circle at 50% 40%, rgba(40,12,20,0.92), rgba(2,4,8,0.98))",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: "60",
+      fontFamily: "monospace",
+    } as CSSStyleDeclaration);
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      width: "min(360px, 90vw)",
+      padding: "22px 20px",
+      borderRadius: "12px",
+      background: "linear-gradient(180deg, #1c1018, #0b070d)",
+      border: "2px solid #7f1d1d",
+      boxShadow:
+        "0 18px 50px rgba(0,0,0,0.7), inset 0 0 28px rgba(220,38,38,0.18)",
+      color: "#fff",
+      display: "flex",
+      flexDirection: "column",
+      gap: "14px",
+      textAlign: "center",
+    } as CSSStyleDeclaration);
+    const title = document.createElement("div");
+    title.textContent = "캐릭터 만들기";
+    Object.assign(title.style, {
+      fontSize: "clamp(18px, 4vmin, 22px)",
+      fontWeight: "bold",
+      letterSpacing: "4px",
+      color: "#fde047",
+      textShadow: "0 2px 6px #000",
+    } as CSSStyleDeclaration);
+    const sub = document.createElement("div");
+    sub.textContent = "이 이름으로 게임에 표시됩니다";
+    Object.assign(sub.style, {
+      fontSize: "11px",
+      color: "#9ca3af",
+      letterSpacing: "1px",
+    } as CSSStyleDeclaration);
+
+    const nameLabel = document.createElement("div");
+    nameLabel.textContent = "이름";
+    Object.assign(nameLabel.style, {
+      fontSize: "11px",
+      color: "#fca5a5",
+      letterSpacing: "2px",
+      textAlign: "left",
+    } as CSSStyleDeclaration);
+    const nameInput = document.createElement("input");
+    nameInput.placeholder = "내 영웅의 이름";
+    nameInput.maxLength = 16;
+    nameInput.value = suggestedName || "";
+    Object.assign(nameInput.style, {
+      padding: "11px 14px",
+      background: "rgba(0,0,0,0.65)",
+      color: "#fde047",
+      border: "2px solid rgba(252,165,165,0.5)",
+      borderRadius: "6px",
+      fontFamily: "monospace",
+      fontSize: "15px",
+      letterSpacing: "2px",
+      textAlign: "center",
+      outline: "none",
+    } as CSSStyleDeclaration);
+
+    const colorLabel = document.createElement("div");
+    colorLabel.textContent = "색깔";
+    Object.assign(colorLabel.style, {
+      fontSize: "11px",
+      color: "#fca5a5",
+      letterSpacing: "2px",
+      textAlign: "left",
+    } as CSSStyleDeclaration);
+    const palette = document.createElement("div");
+    Object.assign(palette.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(8, 1fr)",
+      gap: "6px",
+      justifyItems: "center",
+    } as CSSStyleDeclaration);
+    // 8 hues spread around the wheel
+    const hues = [0, 30, 60, 110, 170, 210, 260, 310];
+    let pickedHue = 170;
+    let pickedSwatch: HTMLButtonElement | undefined;
+    const refreshSwatches = () => {
+      Array.from(palette.children).forEach((c) => {
+        const s = c as HTMLButtonElement;
+        s.style.outline =
+          s === pickedSwatch ? "3px solid #fde047" : "2px solid rgba(255,255,255,0.15)";
+        s.style.transform = s === pickedSwatch ? "scale(1.12)" : "scale(1)";
+      });
+    };
+    hues.forEach((h) => {
+      const sw = document.createElement("button");
+      sw.type = "button";
+      Object.assign(sw.style, {
+        width: "30px",
+        height: "30px",
+        borderRadius: "50%",
+        border: "none",
+        background: `hsl(${h}, 70%, 55%)`,
+        cursor: "pointer",
+        boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+        transition: "transform 0.1s",
+      } as CSSStyleDeclaration);
+      sw.addEventListener("click", () => {
+        pickedHue = h;
+        pickedSwatch = sw;
+        refreshSwatches();
+      });
+      palette.appendChild(sw);
+      if (h === 170) {
+        pickedSwatch = sw;
+      }
+    });
+    refreshSwatches();
+
+    const err = document.createElement("div");
+    Object.assign(err.style, {
+      minHeight: "14px",
+      fontSize: "11px",
+      color: "#fca5a5",
+      letterSpacing: "1px",
+    } as CSSStyleDeclaration);
+
+    const submit = document.createElement("button");
+    submit.type = "button";
+    submit.textContent = "⚔  모험 시작";
+    Object.assign(submit.style, {
+      padding: "14px 18px",
+      fontSize: "15px",
+      fontFamily: "monospace",
+      fontWeight: "bold",
+      letterSpacing: "4px",
+      color: "#fff7d6",
+      background:
+        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
+      border: "3px solid rgba(248,113,113,0.95)",
+      borderRadius: "8px",
+      cursor: "pointer",
+      boxShadow:
+        "0 4px 14px rgba(0,0,0,0.5), inset 0 -3px 6px rgba(0,0,0,0.4)",
+    } as CSSStyleDeclaration);
+    const send = () => {
+      err.textContent = "";
+      const name = nameInput.value.trim();
+      if (name.length < 2) {
+        err.textContent = "이름이 너무 짧아요";
+        return;
+      }
+      room.send("createCharacter", { name, colorHue: pickedHue });
+    };
+    submit.addEventListener("click", send);
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") send();
+    });
+
+    card.append(title, sub, nameLabel, nameInput, colorLabel, palette, err, submit);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    this.charCreateEl = overlay;
+    this.charCreateErrEl = err;
+    setTimeout(() => nameInput.focus(), 50);
+  }
+
+  private dismissCharacterCreateModal() {
+    if (!this.charCreateEl) return;
+    this.charCreateEl.style.transition = "opacity 250ms ease";
+    this.charCreateEl.style.opacity = "0";
+    const el = this.charCreateEl;
+    setTimeout(() => el.remove(), 260);
+    this.charCreateEl = undefined;
+    this.charCreateErrEl = undefined;
+  }
+
+  private setCharacterCreateError(msg: string) {
+    if (this.charCreateErrEl) this.charCreateErrEl.textContent = msg;
   }
 
   private isTouchDevice(): boolean {

@@ -56,6 +56,15 @@ export interface CharacterData {
   skillPoints: number;
   /** Onboarding step index (0 = first; once finished holds TUTORIAL_DONE). */
   tutorialStep?: number;
+  /**
+   * In-game character name, set during the character-creation step.
+   * Empty string = account exists but the player hasn't chosen a hero yet.
+   * Undefined = legacy account from before this field existed (treat as
+   * if creation is done; fall back to the account username).
+   */
+  displayName?: string;
+  /** Player sprite hue in degrees (0..360). 170 ≈ default mint. */
+  colorHue?: number;
 }
 
 interface Account {
@@ -95,6 +104,9 @@ export function makeStarterCharacter(name: string): CharacterData {
     skillLevels: {},
     skillPoints: 0,
     tutorialStep: 0,
+    /** Empty displayName signals "no character yet — show creation modal". */
+    displayName: "",
+    colorHue: 170,
   };
 }
 

@@ -64,4 +64,8 @@ export class PlayerState extends Schema {
   // ── Tutorial ───────────────────────────────────────────────────
   /** Onboarding step index. 0 = first step, >= TUTORIAL_STEPS = finished. */
   @type("number") tutorialStep: number = 0;
+
+  // ── Character appearance (chosen during char creation) ─────────
+  /** Sprite hue rotation in degrees (0..360). Synced to other clients. */
+  @type("number") colorHue: number = 170;
 }
