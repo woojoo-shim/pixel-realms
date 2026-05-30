@@ -158,7 +158,7 @@ export class MenuScene extends Phaser.Scene {
     const nameInput = document.createElement("input");
     nameInput.value = savedName;
     nameInput.maxLength = 16;
-    nameInput.placeholder = "이름 (2~16자)";
+    nameInput.placeholder = "계정 아이디";
     nameInput.autocomplete = "username";
     Object.assign(nameInput.style, {
       padding: "12px 18px",
@@ -333,7 +333,7 @@ export class MenuScene extends Phaser.Scene {
       const finalPw = passwordInput.value;
       if (!/^[a-zA-Z0-9_-]{2,16}$/.test(finalName)) {
         status.style.color = "#fca5a5";
-        status.textContent = "이름: 영문/숫자 2~16자만 (한글 X)";
+        status.textContent = "아이디: 영문/숫자 2~16자만 (한글 X)";
         return;
       }
       if (!finalPw) {
@@ -538,7 +538,7 @@ export class MenuScene extends Phaser.Scene {
     // ── Hint line ─────────────────────────────────────────────────
     const hint = document.createElement("div");
     hint.textContent =
-      "처음이면 이름+비밀번호를 정하세요. 다시 들어올 때 같은 걸 입력하면 캐릭터가 그대로 살아납니다.";
+      "계정 아이디 + 비밀번호로 로그인합니다. 캐릭터 이름은 게임에 들어간 뒤 따로 정합니다.";
     Object.assign(hint.style, {
       fontSize: "11px",
       color: "#9ca3af",
