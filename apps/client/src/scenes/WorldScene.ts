@@ -461,13 +461,19 @@ export class WorldScene extends Phaser.Scene {
     document.body.appendChild(bagBtn);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => bagBtn.remove());
 
-    // Vignette — subtle corner shading
-    this.vignette = this.add
-      .image(0, 0, "vignette")
-      .setScrollFactor(0)
-      .setOrigin(0.5)
-      .setDepth(50)
-      .setAlpha(0.6);
+    // Vignette — subtle corner shading. Heavy alpha-blended overlay
+    // costs a lot on mobile GPUs (full-screen rebleed every frame), so
+    // we skip it on touch devices.
+    const _isTouch =
+      "ontouchstart" in window || (navigator.maxTouchPoints ?? 0) > 0;
+    if (!_isTouch) {
+      this.vignette = this.add
+        .image(0, 0, "vignette")
+        .setScrollFactor(0)
+        .setOrigin(0.5)
+        .setDepth(50)
+        .setAlpha(0.6);
+    }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.joystick.destroy();

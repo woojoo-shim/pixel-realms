@@ -7,6 +7,7 @@ import {
   signOut,
   type OAuthProvider,
 } from "../auth/supabase.js";
+import { tryLockLandscape } from "../util/orientationLock.js";
 
 /**
  * Title screen — a 3-state DOM overlay (title → login → register) sitting
@@ -547,7 +548,10 @@ export class MenuScene extends Phaser.Scene {
     panel.append(slot);
 
     const playBtn = this.bigButton(char ? "⚔  플레이" : "✨  캐릭터 만들기");
-    playBtn.onclick = () => {
+    playBtn.onclick = async () => {
+      // Best-effort fullscreen + landscape lock (phones only, may fail).
+      // Awaited so the user-gesture context is preserved.
+      await tryLockLandscape();
       this.scene.start("world", {
         mode: "quick",
         username: this.lobby!.username,

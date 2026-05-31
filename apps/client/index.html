@@ -134,19 +134,9 @@
       .pr-panel::before { top: -10px; left: 50%; margin-left: -8px; }
       .pr-panel::after  { bottom: -10px; left: 50%; margin-left: -8px; }
 
-      /* ── Force-landscape: rotate the whole game when phone is in
-         portrait so the user can hold their phone naturally upright
-         while the game renders horizontally on the screen. ─────── */
-      body.pr-force-landscape {
-        transform: rotate(-90deg);
-        transform-origin: 0 0;
-        width: 100vh;
-        height: 100vw;
-        position: absolute;
-        top: 100vh;
-        left: 0;
-        overflow: hidden;
-      }
+      /* (No CSS body rotation — it broke the on-screen keyboard and
+         tanked mobile perf. Phaser RESIZE mode adapts to any orientation
+         and a Screen Orientation Lock attempt fires on game start.) */
     </style>
     <style>
       html, body {
@@ -201,53 +191,6 @@
   <body>
     <div id="hud">connecting…</div>
     <div id="game"></div>
-    <script>
-      // Phone in portrait? Rotate the entire app -90° via CSS so it
-      // renders horizontally even though the device is held upright.
-      // Phaser, DOM overlays, and touch input all rotate together.
-      (function () {
-        function isPhone() {
-          var touch = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
-          if (!touch) return false;
-          // Use the larger dimension to avoid mis-classifying tablets.
-          var maxDim = Math.max(window.innerWidth, window.innerHeight);
-          return maxDim < 950;
-        }
-        function isPortrait() {
-          var o = (screen.orientation && screen.orientation.type) || '';
-          if (o) return o.indexOf('portrait') !== -1;
-          // Fallback: window aspect ratio with a 20px tolerance.
-          return window.innerHeight > window.innerWidth + 20;
-        }
-        function refresh() {
-          var need = isPhone() && isPortrait();
-          var changed = document.body.classList.toggle('pr-force-landscape', need);
-          // Kick Phaser's RESIZE handler since CSS-rotation doesn't
-          // fire a real resize event on its own.
-          if (changed) {
-            setTimeout(function () {
-              window.dispatchEvent(new Event('resize'));
-            }, 50);
-          }
-        }
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', refresh);
-        } else {
-          refresh();
-        }
-        window.addEventListener('resize', refresh);
-        window.addEventListener('orientationchange', refresh);
-        if (screen.orientation && screen.orientation.addEventListener) {
-          screen.orientation.addEventListener('change', refresh);
-        }
-        ['orientationchange', 'resize'].forEach(function (ev) {
-          window.addEventListener(ev, function () {
-            setTimeout(refresh, 150);
-            setTimeout(refresh, 600);
-          });
-        });
-      })();
-    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
