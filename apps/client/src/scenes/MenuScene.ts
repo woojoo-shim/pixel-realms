@@ -68,24 +68,76 @@ export class MenuScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
   }
 
-  /* ── Backdrop drawing ────────────────────────────────────────────── */
+  /* ── Backdrop: gothic night scene (moon, mountains, castle silhouette) ── */
   private drawBackdrop() {
     const w = this.scale.width;
     const h = this.scale.height;
-    this.cameras.main.setBackgroundColor("#070405");
+    this.cameras.main.setBackgroundColor("#08080d");
     const bg = this.add.graphics().setScrollFactor(0).setDepth(0);
-    bg.fillStyle(0x1a0a07, 1);
+
+    // Sky gradient — deep midnight blue at top → near-black at horizon
+    bg.fillStyle(0x0c1326, 1);
     bg.fillRect(0, 0, w, h);
-    bg.fillStyle(0x451a07, 0.55);
-    bg.fillEllipse(w * 0.5, h * 0.18, w * 1.3, h * 0.6);
-    bg.fillStyle(0x2a1006, 0.55);
-    bg.fillEllipse(w * 0.5, h * 0.72, w * 1.6, h * 0.95);
-    // Faint sigil circle behind the title
-    const sigil = this.add.graphics().setScrollFactor(0).setDepth(1);
-    sigil.lineStyle(2, 0x7f1d1d, 0.35);
-    sigil.strokeCircle(w * 0.5, h * 0.32, Math.min(w, h) * 0.18);
-    sigil.lineStyle(1, 0xfbbf24, 0.25);
-    sigil.strokeCircle(w * 0.5, h * 0.32, Math.min(w, h) * 0.18 + 12);
+    bg.fillStyle(0x16203a, 0.6);
+    bg.fillRect(0, 0, w, h * 0.55);
+    bg.fillStyle(0x050608, 1);
+    bg.fillRect(0, h * 0.78, w, h * 0.22); // foreground ground
+
+    // Stars (deterministic so they don't twinkle wildly on resize)
+    bg.fillStyle(0xe6efff, 0.55);
+    const starSeed = 13;
+    for (let i = 0; i < 60; i++) {
+      const sx = ((i * 53 + starSeed) % 997) / 997;
+      const sy = ((i * 71 + starSeed * 3) % 401) / 401;
+      const x = sx * w;
+      const y = sy * h * 0.55;
+      bg.fillRect(Math.floor(x), Math.floor(y), 1, 1);
+    }
+
+    // Moon — upper-right, soft halo
+    const moonX = w * 0.84;
+    const moonY = h * 0.18;
+    const moonR = Math.min(w, h) * 0.045;
+    bg.fillStyle(0xfff7d6, 0.18);
+    bg.fillCircle(moonX, moonY, moonR * 2.4);
+    bg.fillStyle(0xfff7d6, 0.32);
+    bg.fillCircle(moonX, moonY, moonR * 1.5);
+    bg.fillStyle(0xfff7d6, 1);
+    bg.fillCircle(moonX, moonY, moonR);
+
+    // Distant mountain ridge (left side)
+    bg.fillStyle(0x06080f, 1);
+    bg.beginPath();
+    bg.moveTo(0, h * 0.78);
+    bg.lineTo(0, h * 0.55);
+    bg.lineTo(w * 0.08, h * 0.42);
+    bg.lineTo(w * 0.16, h * 0.5);
+    bg.lineTo(w * 0.24, h * 0.36);
+    bg.lineTo(w * 0.34, h * 0.5);
+    bg.lineTo(w * 0.42, h * 0.46);
+    bg.lineTo(w * 0.5, h * 0.78);
+    bg.closePath();
+    bg.fillPath();
+
+    // Castle silhouette (right side) — main keep + two thin towers
+    const cx = w * 0.78;
+    const cy = h * 0.78;
+    bg.fillStyle(0x07090f, 1);
+    bg.fillRect(cx - w * 0.05, cy - h * 0.18, w * 0.1, h * 0.18); // keep
+    bg.fillRect(cx + w * 0.04, cy - h * 0.24, w * 0.02, h * 0.24); // right spire
+    bg.fillRect(cx - w * 0.06, cy - h * 0.22, w * 0.02, h * 0.22); // left spire
+    // Crenellations on top of keep
+    for (let i = 0; i < 6; i++) {
+      bg.fillRect(cx - w * 0.05 + i * (w * 0.02), cy - h * 0.19, w * 0.01, 4);
+    }
+    // Tiny lit windows
+    bg.fillStyle(0xfde047, 0.7);
+    bg.fillRect(cx - 2, cy - h * 0.12, 3, 4);
+    bg.fillRect(cx + w * 0.05, cy - h * 0.18, 2, 3);
+
+    // Foreground ground edge
+    bg.fillStyle(0x0a0c10, 1);
+    bg.fillRect(0, h * 0.78, w, 2);
   }
 
   /* ── DOM overlay lifecycle ───────────────────────────────────────── */
@@ -101,42 +153,139 @@ export class MenuScene extends Phaser.Scene {
       position: "fixed",
       inset: "0",
       display: "flex",
-      flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      padding: "16px",
-      gap: "14px",
+      padding: "20px",
       color: "#fff",
       fontFamily: "monospace",
       zIndex: "20",
       pointerEvents: "none",
     } as CSSStyleDeclaration);
 
-    /* Title — always visible at top */
+    /* ── Central panel with gold-gilded ornate border ──────────────── */
+    const panel = document.createElement("div");
+    Object.assign(panel.style, {
+      width: "min(360px, 88vw)",
+      padding: "20px 22px 22px",
+      background:
+        "linear-gradient(180deg, rgba(16,20,24,0.96), rgba(8,10,14,0.98))",
+      border: "3px solid #6b4f17",
+      borderRadius: "4px",
+      boxShadow:
+        "0 0 0 2px #2a1c08 inset, 0 0 0 4px #c89834 inset, 0 0 0 5px #2a1c08 inset, 0 18px 50px rgba(0,0,0,0.85), 0 0 80px rgba(110,231,183,0.08)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "14px",
+      pointerEvents: "auto",
+      position: "relative",
+    } as CSSStyleDeclaration);
+
+    /* ── Corner ornaments ──────────────────────────────────────────── */
+    const cornerColor = "#c89834";
+    const cornerSize = 12;
+    for (const [t, l, b, r] of [
+      ["6px", "6px", "auto", "auto"],
+      ["6px", "auto", "auto", "6px"],
+      ["auto", "6px", "6px", "auto"],
+      ["auto", "auto", "6px", "6px"],
+    ] as const) {
+      const c = document.createElement("div");
+      Object.assign(c.style, {
+        position: "absolute",
+        top: t,
+        left: l,
+        bottom: b,
+        right: r,
+        width: `${cornerSize}px`,
+        height: `${cornerSize}px`,
+        background: cornerColor,
+        transform: "rotate(45deg)",
+        opacity: "0.85",
+        pointerEvents: "none",
+      } as CSSStyleDeclaration);
+      panel.appendChild(c);
+    }
+
+    /* ── Hero sprite logo (the actual in-game character) ───────────── */
+    const heroImg = document.createElement("img");
+    heroImg.src = "/hero.png";
+    heroImg.alt = "Hero";
+    Object.assign(heroImg.style, {
+      width: "96px",
+      height: "96px",
+      imageRendering: "pixelated",
+      marginTop: "4px",
+      filter:
+        "drop-shadow(0 0 18px rgba(110,231,183,0.55)) drop-shadow(0 4px 6px rgba(0,0,0,0.6))",
+    } as CSSStyleDeclaration);
+    panel.append(heroImg);
+
+    /* ── Title in mint pixel-style with glow ───────────────────────── */
     const title = document.createElement("div");
     title.textContent = "PIXEL REALMS";
     Object.assign(title.style, {
-      fontSize: "clamp(28px, 7vmin, 48px)",
-      letterSpacing: "clamp(4px, 1.5vmin, 10px)",
-      color: "#fde047",
-      textShadow: "0 0 18px rgba(252,165,165,0.5), 0 4px 8px #000",
-      fontWeight: "bold",
-      marginBottom: "8px",
+      fontSize: "clamp(24px, 6.4vmin, 38px)",
+      letterSpacing: "clamp(3px, 1.3vmin, 8px)",
+      color: "#6ee7b7",
+      textShadow:
+        "0 0 14px rgba(110,231,183,0.7), 0 0 28px rgba(110,231,183,0.3), 0 3px 0 #064e3b",
+      fontWeight: "900",
+      textAlign: "center",
+      lineHeight: "1.05",
+      margin: "0",
     } as CSSStyleDeclaration);
-    overlay.append(title);
+    panel.append(title);
 
-    if (view === "title") this.renderTitle(overlay);
-    else if (view === "login") this.renderForm(overlay, "login");
-    else if (view === "register") this.renderForm(overlay, "register");
+    /* ── Decorative divider line with center diamond ───────────────── */
+    const divider = document.createElement("div");
+    Object.assign(divider.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      width: "85%",
+      margin: "2px 0 6px",
+    } as CSSStyleDeclaration);
+    const dline1 = document.createElement("div");
+    const dline2 = document.createElement("div");
+    const lineStyle = {
+      flex: "1",
+      height: "2px",
+      background:
+        "linear-gradient(90deg, rgba(110,231,183,0) 0%, #6ee7b7 50%, rgba(110,231,183,0) 100%)",
+    } as Partial<CSSStyleDeclaration>;
+    Object.assign(dline1.style, lineStyle);
+    Object.assign(dline2.style, lineStyle);
+    const diamond = document.createElement("div");
+    Object.assign(diamond.style, {
+      width: "8px",
+      height: "8px",
+      background: "#6ee7b7",
+      transform: "rotate(45deg)",
+      boxShadow: "0 0 8px rgba(110,231,183,0.8)",
+    } as CSSStyleDeclaration);
+    divider.append(dline1, diamond, dline2);
+    panel.append(divider);
 
+    /* ── View-specific contents ────────────────────────────────────── */
+    if (view === "title") this.renderTitle(panel);
+    else if (view === "login") this.renderForm(panel, "login");
+    else if (view === "register") this.renderForm(panel, "register");
+
+    overlay.append(panel);
     document.body.append(overlay);
     this.overlay = overlay;
   }
 
-  /* ── Title view: just two buttons (로그인 / 회원가입), nothing else ─── */
-  private renderTitle(root: HTMLDivElement) {
-    const card = document.createElement("div");
-    Object.assign(card.style, this.cardStyle() as Partial<CSSStyleDeclaration>);
+  /* ── Title view: just two buttons (로그인 / 회원가입) ─────────────── */
+  private renderTitle(panel: HTMLDivElement) {
+    const stack = document.createElement("div");
+    Object.assign(stack.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+      width: "100%",
+    } as CSSStyleDeclaration);
 
     const loginBtn = this.bigButton("🗝  로그인");
     loginBtn.onclick = () => this.mount("login");
@@ -147,24 +296,29 @@ export class MenuScene extends Phaser.Scene {
     signupBtn.style.borderColor = "rgba(125,211,252,0.95)";
     signupBtn.onclick = () => this.mount("register");
 
-    card.append(loginBtn, signupBtn);
-    root.append(card);
+    stack.append(loginBtn, signupBtn);
+    panel.append(stack);
   }
 
   /* ── Form view: login OR register ────────────────────────────────── */
-  private renderForm(root: HTMLDivElement, mode: "login" | "register") {
+  private renderForm(panel: HTMLDivElement, mode: "login" | "register") {
     const card = document.createElement("div");
-    Object.assign(card.style, this.cardStyle() as Partial<CSSStyleDeclaration>);
+    Object.assign(card.style, {
+      width: "100%",
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+    } as CSSStyleDeclaration);
 
     const heading = document.createElement("div");
     heading.textContent = mode === "login" ? "로그인" : "회원가입";
     Object.assign(heading.style, {
-      fontSize: "18px",
+      fontSize: "16px",
       fontWeight: "bold",
       letterSpacing: "4px",
-      color: "#fde047",
+      color: "#c89834",
       textAlign: "center",
-      marginBottom: "10px",
+      marginBottom: "4px",
     } as CSSStyleDeclaration);
     card.append(heading);
 
@@ -240,7 +394,7 @@ export class MenuScene extends Phaser.Scene {
     );
 
     card.append(idIn, pwIn, submitBtn, status, back);
-    root.append(card);
+    panel.append(card);
     setTimeout(() => idIn.focus(), 50);
   }
 
