@@ -133,100 +133,22 @@ export class MenuScene extends Phaser.Scene {
     this.overlay = overlay;
   }
 
-  /* ── Title view: two big buttons + optional OAuth row ────────────── */
+  /* ── Title view: just two buttons (로그인 / 회원가입), nothing else ─── */
   private renderTitle(root: HTMLDivElement) {
-    const subtitle = document.createElement("div");
-    subtitle.textContent = "2D 픽셀 멀티 RPG";
-    Object.assign(subtitle.style, {
-      fontSize: "12px",
-      color: "#9ca3af",
-      letterSpacing: "3px",
-      marginBottom: "6px",
-    } as CSSStyleDeclaration);
-    root.append(subtitle);
-
-    /* If already signed in via OAuth, jump straight to "Play as ..." */
-    if (this.oauthToken && this.oauthDisplayName) {
-      const card = document.createElement("div");
-      Object.assign(card.style, {
-        ...this.cardStyle(),
-        textAlign: "center",
-      } as Partial<CSSStyleDeclaration>);
-      const hi = document.createElement("div");
-      hi.textContent = `로그인됨: ${this.oauthDisplayName}`;
-      Object.assign(hi.style, {
-        color: "#fde047",
-        fontSize: "13px",
-        marginBottom: "10px",
-      } as CSSStyleDeclaration);
-      const playBtn = this.bigButton("⚔  플레이");
-      playBtn.onclick = () =>
-        this.scene.start("world", {
-          mode: "quick",
-          token: this.oauthToken!,
-        });
-      const out = this.smallButton("로그아웃");
-      out.style.marginTop = "10px";
-      out.onclick = async () => {
-        await signOut();
-        this.oauthToken = null;
-        this.oauthDisplayName = null;
-        this.mount("title");
-      };
-      card.append(hi, playBtn, out);
-      root.append(card);
-      return;
-    }
-
     const card = document.createElement("div");
     Object.assign(card.style, this.cardStyle() as Partial<CSSStyleDeclaration>);
 
     const loginBtn = this.bigButton("🗝  로그인");
     loginBtn.onclick = () => this.mount("login");
+
     const signupBtn = this.bigButton("✨  회원가입");
     signupBtn.style.background =
       "linear-gradient(180deg, rgba(7,89,133,0.95), rgba(2,40,60,0.98))";
     signupBtn.style.borderColor = "rgba(125,211,252,0.95)";
     signupBtn.onclick = () => this.mount("register");
+
     card.append(loginBtn, signupBtn);
-
-    if (oauthEnabled) {
-      const sep = document.createElement("div");
-      sep.textContent = "또는";
-      Object.assign(sep.style, {
-        fontSize: "11px",
-        color: "#6b7280",
-        textAlign: "center",
-        margin: "14px 0 6px",
-      } as CSSStyleDeclaration);
-      card.append(sep);
-      const row = document.createElement("div");
-      Object.assign(row.style, {
-        display: "flex",
-        gap: "8px",
-        justifyContent: "center",
-      } as CSSStyleDeclaration);
-      (["google", "github", "discord"] as OAuthProvider[]).forEach(
-        (provider) => {
-          const b = this.oauthButton(provider);
-          row.append(b);
-        }
-      );
-      card.append(row);
-    }
-
     root.append(card);
-
-    const tip = document.createElement("div");
-    tip.textContent = "처음이면 회원가입 → 캐릭터를 만드세요";
-    Object.assign(tip.style, {
-      fontSize: "11px",
-      color: "#9ca3af",
-      marginTop: "10px",
-      textAlign: "center",
-      maxWidth: "320px",
-    } as CSSStyleDeclaration);
-    root.append(tip);
   }
 
   /* ── Form view: login OR register ────────────────────────────────── */
