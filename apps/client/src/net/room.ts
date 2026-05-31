@@ -40,24 +40,37 @@ export async function joinWorld(opts: JoinOptions): Promise<JoinResult> {
     payload.authMode = opts.authMode ?? "auto";
   }
 
+  // Render free tier sleeps after 15min idle; the first connect after a
+  // cold start can fail with a timeout while the container boots. Retry
+  // once after a short delay so transient cold-start errors don't surface
+  // as "CONNECTION FAILED" to the user.
+  const attempt = async (): Promise<Room> => {
+    switch (opts.mode) {
+      case "solo":
+        return client.create("world", { ...payload, private: true });
+      case "create":
+        return client.create("world", { ...payload, private: false });
+      case "join":
+        if (!opts.roomId) throw new Error("Room ID required");
+        return client.joinById(opts.roomId, payload);
+      case "quick":
+      default:
+        return client.joinOrCreate("world", payload);
+    }
+  };
+
   let room: Room;
-  switch (opts.mode) {
-    case "solo":
-      // Private room — closed to matchmaking. Friends can't join.
-      room = await client.create("world", { ...payload, private: true });
-      break;
-    case "create":
-      // Public-listed room with a shareable id.
-      room = await client.create("world", { ...payload, private: false });
-      break;
-    case "join":
-      if (!opts.roomId) throw new Error("Room ID required");
-      room = await client.joinById(opts.roomId, payload);
-      break;
-    case "quick":
-    default:
-      room = await client.joinOrCreate("world", payload);
-      break;
+  try {
+    room = await attempt();
+  } catch (firstErr) {
+    // Some Colyseus / network errors don't have a `.code`; treat any
+    // failure as "maybe cold start" and try once more after 4s.
+    await new Promise((r) => setTimeout(r, 4000));
+    try {
+      room = await attempt();
+    } catch (_secondErr) {
+      throw firstErr;
+    }
   }
   return { client, room };
 }

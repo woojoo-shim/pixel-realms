@@ -24,6 +24,22 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
+    // Render free tier sleeps after 15min idle. Fire a one-shot HEAD ping
+    // the instant the menu opens so the server has 5–30s to wake up while
+    // the player is reading the title screen and typing credentials.
+    // Without this the first join attempt always times out after a long
+    // cold start. We intentionally swallow errors — the join itself will
+    // surface the real failure if the server is genuinely down.
+    const wsUrl =
+      (import.meta as { env?: Record<string, string | undefined> }).env
+        ?.VITE_SERVER_URL ?? "";
+    if (wsUrl) {
+      const httpUrl = wsUrl
+        .replace(/^wss:/, "https:")
+        .replace(/^ws:/, "http:");
+      void fetch(`${httpUrl}/health`, { mode: "cors" }).catch(() => {});
+    }
+
     this.cameras.main.setBackgroundColor("#070405");
 
     /* Layered dark gradient backdrop (top-left torch glow → black corners) */
@@ -354,11 +370,12 @@ export class MenuScene extends Phaser.Scene {
       joinBtn.disabled = true;
       status.style.color = "#a8a29e";
       status.textContent =
-        mode === "solo"
+        (mode === "solo"
           ? "입장 중…"
           : mode === "create"
             ? "방 만드는 중…"
-            : `${roomId?.toUpperCase()} 방 입장 중…`;
+            : `${roomId?.toUpperCase()} 방 입장 중…`) +
+        " (서버가 자고 있으면 최대 30초 걸려요)";
       this.scene.start("world", {
         mode,
         roomId,
