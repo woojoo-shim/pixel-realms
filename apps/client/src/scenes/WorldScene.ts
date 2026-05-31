@@ -2145,69 +2145,56 @@ export class WorldScene extends Phaser.Scene {
     overlay.innerHTML = "";
     const slide = STORY_SLIDES[idx];
     if (!slide) return;
+    // Vibe-based tint colour per slide
+    const tints: Record<string, string> = {
+      ruins: "rgba(80, 40, 20, 0.35)",
+      darkLords: "rgba(127, 29, 29, 0.4)",
+      awakening: "rgba(127, 100, 30, 0.35)",
+      departure: "rgba(30, 80, 60, 0.35)",
+    };
+    const tint = tints[slide.vibe] ?? "rgba(40,20,40,0.3)";
     const card = document.createElement("div");
+    card.className = "pr-panel pr-fade-in";
     Object.assign(card.style, {
-      width: "min(420px, 92vw)",
-      padding: "26px 22px",
-      borderRadius: "10px",
-      background: "linear-gradient(180deg, #0d0710, #050308)",
-      border: "2px solid #4a3a18",
-      boxShadow:
-        "0 18px 50px rgba(0,0,0,0.75), inset 0 0 28px rgba(120,80,30,0.22)",
-      color: "#e7e2d4",
+      width: "min(440px, 92vw)",
+      padding: "32px 28px 24px",
+      backgroundImage: `radial-gradient(circle at 50% 0%, ${tint}, transparent 70%), linear-gradient(180deg, rgba(20,16,22,0.96), rgba(8,6,10,0.99))`,
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      gap: "16px",
+      gap: "18px",
       textAlign: "center",
     } as CSSStyleDeclaration);
     const step = document.createElement("div");
     step.textContent = `${idx + 1} / ${STORY_SLIDES.length}`;
     Object.assign(step.style, {
-      fontSize: "10px",
-      color: "#9ca3af",
-      letterSpacing: "3px",
+      fontFamily: "var(--pr-display)",
+      fontSize: "11px",
+      color: "var(--pr-gold)",
+      letterSpacing: "6px",
     } as CSSStyleDeclaration);
     const body = document.createElement("div");
     body.textContent = slide.body;
     Object.assign(body.style, {
-      fontSize: "14px",
-      lineHeight: "1.7",
-      color: "#fde047",
+      fontFamily: "var(--pr-story)",
+      fontSize: "16px",
+      lineHeight: "2",
+      color: "var(--pr-parchment)",
       whiteSpace: "pre-line",
-      padding: "8px 0",
+      padding: "12px 0",
       minHeight: "120px",
+      letterSpacing: "1px",
     } as CSSStyleDeclaration);
     const nextBtn = document.createElement("button");
     nextBtn.type = "button";
     nextBtn.textContent =
       idx === STORY_SLIDES.length - 1 ? "▶  계속" : "▶  다음";
-    Object.assign(nextBtn.style, {
-      padding: "12px 22px",
-      fontSize: "14px",
-      fontFamily: "monospace",
-      letterSpacing: "3px",
-      color: "#fff7d6",
-      background:
-        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
-      border: "2px solid rgba(248,113,113,0.95)",
-      borderRadius: "6px",
-      cursor: "pointer",
-    } as CSSStyleDeclaration);
+    nextBtn.className = "pr-btn pr-btn-blood";
     nextBtn.onclick = () => onNext();
     const skip = document.createElement("button");
     skip.type = "button";
     skip.textContent = "스킵 →";
-    Object.assign(skip.style, {
-      background: "transparent",
-      border: "none",
-      color: "#9ca3af",
-      cursor: "pointer",
-      fontSize: "11px",
-      letterSpacing: "2px",
-      padding: "2px",
-      fontFamily: "monospace",
-    } as CSSStyleDeclaration);
+    skip.className = "pr-btn pr-btn-ghost";
     skip.onclick = () => {
       localStorage.setItem("pr:storySeen", "1");
       this.renderClassStep(overlay, "warrior", (id) => {
@@ -2253,38 +2240,35 @@ export class WorldScene extends Phaser.Scene {
   ) {
     overlay.innerHTML = "";
     const card = document.createElement("div");
+    card.className = "pr-panel pr-fade-in";
     Object.assign(card.style, {
-      width: "min(520px, 94vw)",
+      width: "min(560px, 94vw)",
       maxHeight: "92vh",
       overflowY: "auto",
-      padding: "22px 20px",
-      borderRadius: "10px",
-      background: "linear-gradient(180deg, #0d0710, #050308)",
-      border: "2px solid #4a3a18",
-      boxShadow:
-        "0 18px 50px rgba(0,0,0,0.75), inset 0 0 28px rgba(120,80,30,0.22)",
-      color: "#e7e2d4",
+      padding: "28px 24px 22px",
       display: "flex",
       flexDirection: "column",
-      gap: "14px",
+      gap: "16px",
     } as CSSStyleDeclaration);
     const heading = document.createElement("div");
     heading.textContent = "직업을 골라라";
     Object.assign(heading.style, {
-      fontSize: "20px",
-      fontWeight: "bold",
-      letterSpacing: "5px",
-      color: "#fde047",
+      fontFamily: "var(--pr-display)",
+      fontSize: "24px",
+      fontWeight: "900",
+      letterSpacing: "8px",
+      color: "var(--pr-gold-bright)",
       textAlign: "center",
-      textShadow: "0 2px 6px #000",
+      textShadow: "0 0 18px rgba(252,209,64,0.5), 0 3px 6px #000",
     } as CSSStyleDeclaration);
     const sub = document.createElement("div");
-    sub.textContent = "선택은 영구적이지 않습니다 — 캐릭터 만들면 적용됨";
+    sub.textContent = "기본 스탯과 시작 스킬이 달라집니다";
     Object.assign(sub.style, {
-      fontSize: "10px",
-      color: "#9ca3af",
+      fontFamily: "var(--pr-story)",
+      fontSize: "12px",
+      color: "var(--pr-gold)",
       textAlign: "center",
-      letterSpacing: "1px",
+      letterSpacing: "3px",
       marginBottom: "4px",
     } as CSSStyleDeclaration);
 
@@ -2301,37 +2285,53 @@ export class WorldScene extends Phaser.Scene {
       cards.forEach((c, i) => {
         const def = CLASSES[i];
         const isPicked = def.id === selected;
-        c.style.borderColor = isPicked ? "#fde047" : "rgba(252,165,165,0.25)";
-        c.style.background = isPicked
-          ? "linear-gradient(180deg, rgba(60,42,12,0.85), rgba(20,12,4,0.95))"
-          : "rgba(8,5,12,0.75)";
-        c.style.boxShadow = isPicked
-          ? "0 0 14px rgba(252,165,165,0.55), inset 0 0 18px rgba(120,80,30,0.2)"
-          : "none";
+        if (isPicked) {
+          c.style.borderColor = "var(--accent)";
+          c.style.background =
+            "linear-gradient(180deg, rgba(40,30,12,0.9), rgba(15,10,4,0.95))";
+          c.style.boxShadow =
+            "0 0 22px var(--accent-soft), inset 0 0 20px rgba(0,0,0,0.55)";
+          c.style.transform = "translateX(4px)";
+        } else {
+          c.style.borderColor = "rgba(252,165,165,0.18)";
+          c.style.background = "rgba(8,5,12,0.75)";
+          c.style.boxShadow = "none";
+          c.style.transform = "translateX(0)";
+        }
       });
     };
 
     CLASSES.forEach((def) => {
       const c = document.createElement("div");
+      c.className = `pr-class-${def.id}`;
       Object.assign(c.style, {
-        padding: "12px 14px",
-        border: "2px solid rgba(252,165,165,0.25)",
-        borderRadius: "8px",
+        padding: "14px 16px",
+        border: "2px solid rgba(252,165,165,0.18)",
+        borderRadius: "6px",
         background: "rgba(8,5,12,0.75)",
         cursor: "pointer",
         display: "flex",
-        gap: "12px",
-        alignItems: "flex-start",
-        transition: "transform 0.08s",
+        gap: "14px",
+        alignItems: "stretch",
+        transition: "all 0.18s ease",
       } as CSSStyleDeclaration);
-      const icon = document.createElement("div");
-      icon.textContent = def.icon;
-      Object.assign(icon.style, {
-        fontSize: "34px",
+      // Class portrait — coloured circle with emoji
+      const portrait = document.createElement("div");
+      portrait.textContent = def.icon;
+      Object.assign(portrait.style, {
+        fontSize: "30px",
         lineHeight: "1",
-        width: "44px",
-        textAlign: "center",
-        filter: "drop-shadow(0 0 8px rgba(252,165,165,0.5))",
+        width: "56px",
+        height: "56px",
+        flexShrink: "0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: "50%",
+        background: `radial-gradient(circle at 40% 30%, hsl(${def.suggestedHue}, 60%, 35%), hsl(${def.suggestedHue}, 70%, 12%) 70%)`,
+        border: "2px solid var(--accent)",
+        boxShadow:
+          "inset 0 0 10px rgba(0,0,0,0.6), 0 0 14px var(--accent-soft)",
       } as CSSStyleDeclaration);
       const right = document.createElement("div");
       Object.assign(right.style, {
@@ -2343,32 +2343,36 @@ export class WorldScene extends Phaser.Scene {
       const nameRow = document.createElement("div");
       Object.assign(nameRow.style, {
         display: "flex",
-        gap: "8px",
+        gap: "10px",
         alignItems: "baseline",
+        flexWrap: "wrap",
       } as CSSStyleDeclaration);
       const nm = document.createElement("div");
       nm.textContent = def.name;
       Object.assign(nm.style, {
-        fontSize: "16px",
-        fontWeight: "bold",
-        color: "#fde047",
-        letterSpacing: "3px",
+        fontFamily: "var(--pr-display)",
+        fontSize: "18px",
+        fontWeight: "700",
+        color: "var(--accent)",
+        letterSpacing: "4px",
       } as CSSStyleDeclaration);
       const tag = document.createElement("div");
-      tag.textContent = def.tagline;
+      tag.textContent = `「 ${def.tagline} 」`;
       Object.assign(tag.style, {
-        fontSize: "10px",
-        color: "#9ca3af",
+        fontFamily: "var(--pr-story)",
+        fontSize: "12px",
+        color: "var(--pr-gold)",
         letterSpacing: "2px",
       } as CSSStyleDeclaration);
       nameRow.append(nm, tag);
       const desc = document.createElement("div");
       desc.textContent = def.description;
       Object.assign(desc.style, {
-        fontSize: "11px",
-        color: "#cbd5e1",
+        fontFamily: "var(--pr-body)",
+        fontSize: "12px",
+        color: "#d1d5db",
         whiteSpace: "pre-line",
-        lineHeight: "1.4",
+        lineHeight: "1.5",
       } as CSSStyleDeclaration);
       const stats = document.createElement("div");
       const sBits: string[] = [];
@@ -2380,13 +2384,15 @@ export class WorldScene extends Phaser.Scene {
       if (def.baseQck) sBits.push(`QCK +${def.baseQck}`);
       stats.textContent = sBits.join(" · ");
       Object.assign(stats.style, {
-        fontSize: "10px",
-        color: "#94a3b8",
-        letterSpacing: "1px",
+        fontFamily: "var(--pr-body)",
+        fontSize: "11px",
+        color: "var(--accent)",
+        letterSpacing: "1.5px",
         marginTop: "2px",
+        opacity: "0.85",
       } as CSSStyleDeclaration);
       right.append(nameRow, desc, stats);
-      c.append(icon, right);
+      c.append(portrait, right);
       c.onclick = () => {
         selected = def.id;
         refresh();
@@ -2399,19 +2405,8 @@ export class WorldScene extends Phaser.Scene {
     const next = document.createElement("button");
     next.type = "button";
     next.textContent = "▶  다음 (이름 짓기)";
-    Object.assign(next.style, {
-      padding: "12px 18px",
-      fontSize: "14px",
-      fontFamily: "monospace",
-      letterSpacing: "3px",
-      color: "#fff7d6",
-      background:
-        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
-      border: "2px solid rgba(248,113,113,0.95)",
-      borderRadius: "6px",
-      cursor: "pointer",
-      marginTop: "4px",
-    } as CSSStyleDeclaration);
+    next.className = "pr-btn pr-btn-blood";
+    next.style.marginTop = "6px";
     next.onclick = () => onPicked(selected);
 
     card.append(heading, sub, grid, next);
@@ -2431,36 +2426,34 @@ export class WorldScene extends Phaser.Scene {
     overlay.innerHTML = "";
     const def = CLASSES.find((c) => c.id === classId);
     const card = document.createElement("div");
+    card.className = `pr-panel pr-fade-in pr-class-${classId}`;
     Object.assign(card.style, {
-      width: "min(360px, 92vw)",
-      padding: "22px 20px",
-      borderRadius: "10px",
-      background: "linear-gradient(180deg, #0d0710, #050308)",
-      border: "2px solid #4a3a18",
-      boxShadow:
-        "0 18px 50px rgba(0,0,0,0.75), inset 0 0 28px rgba(120,80,30,0.22)",
-      color: "#e7e2d4",
+      width: "min(380px, 92vw)",
+      padding: "28px 24px 22px",
       display: "flex",
       flexDirection: "column",
-      gap: "12px",
+      gap: "14px",
       textAlign: "center",
     } as CSSStyleDeclaration);
 
     const heading = document.createElement("div");
     heading.textContent = `${def?.icon ?? "⚔"}  ${def?.name ?? "영웅"}`;
     Object.assign(heading.style, {
-      fontSize: "20px",
-      fontWeight: "bold",
-      letterSpacing: "4px",
-      color: "#fde047",
+      fontFamily: "var(--pr-display)",
+      fontSize: "24px",
+      fontWeight: "900",
+      letterSpacing: "6px",
+      color: "var(--accent)",
+      textShadow: "0 0 18px var(--accent-soft)",
     } as CSSStyleDeclaration);
 
     const sub = document.createElement("div");
-    sub.textContent = "이름과 색을 정하세요";
+    sub.textContent = `「 ${def?.tagline ?? ""} 」`;
     Object.assign(sub.style, {
-      fontSize: "11px",
-      color: "#9ca3af",
-      letterSpacing: "1px",
+      fontFamily: "var(--pr-story)",
+      fontSize: "13px",
+      color: "var(--pr-gold)",
+      letterSpacing: "3px",
       marginBottom: "4px",
     } as CSSStyleDeclaration);
 
@@ -2468,18 +2461,7 @@ export class WorldScene extends Phaser.Scene {
     nameInput.placeholder = "내 영웅의 이름";
     nameInput.maxLength = 16;
     nameInput.value = suggestedName || "";
-    Object.assign(nameInput.style, {
-      padding: "11px 14px",
-      background: "rgba(0,0,0,0.65)",
-      color: "#fde047",
-      border: "2px solid rgba(252,165,165,0.45)",
-      borderRadius: "6px",
-      fontFamily: "monospace",
-      fontSize: "15px",
-      letterSpacing: "2px",
-      textAlign: "center",
-      outline: "none",
-    } as CSSStyleDeclaration);
+    nameInput.className = "pr-input";
 
     let pickedHue = initialHue;
     const palette = document.createElement("div");
@@ -2539,19 +2521,7 @@ export class WorldScene extends Phaser.Scene {
     const submit = document.createElement("button");
     submit.type = "button";
     submit.textContent = "⚔  모험 시작";
-    Object.assign(submit.style, {
-      padding: "13px 18px",
-      fontSize: "14px",
-      fontFamily: "monospace",
-      fontWeight: "bold",
-      letterSpacing: "4px",
-      color: "#fff7d6",
-      background:
-        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
-      border: "3px solid rgba(248,113,113,0.95)",
-      borderRadius: "8px",
-      cursor: "pointer",
-    } as CSSStyleDeclaration);
+    submit.className = "pr-btn pr-btn-blood";
     const send = () => {
       err.textContent = "";
       const name = nameInput.value.trim();
@@ -2569,16 +2539,7 @@ export class WorldScene extends Phaser.Scene {
     const back = document.createElement("button");
     back.type = "button";
     back.textContent = "← 직업 다시 고르기";
-    Object.assign(back.style, {
-      background: "transparent",
-      border: "none",
-      color: "#9ca3af",
-      cursor: "pointer",
-      fontSize: "11px",
-      letterSpacing: "2px",
-      padding: "4px",
-      fontFamily: "monospace",
-    } as CSSStyleDeclaration);
+    back.className = "pr-btn pr-btn-ghost";
     back.onclick = onBack;
 
     card.append(heading, sub, nameInput, palette, err, submit, back);

@@ -9,6 +9,131 @@
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect width=%2216%22 height=%2216%22 fill=%22%236ee7b7%22/></svg>" />
     <title>Pixel Realms</title>
+    <!-- Fonts: Cinzel (gothic display) + IM Fell English (story body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=IM+Fell+English+SC&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --pr-display: 'Cinzel', 'Noto Sans KR', serif;
+        --pr-story: 'IM Fell English SC', 'Noto Sans KR', serif;
+        --pr-body: 'Noto Sans KR', ui-monospace, monospace;
+        --pr-gold: #c89834;
+        --pr-gold-bright: #fde047;
+        --pr-blood: #7f1d1d;
+        --pr-ink: #0b070d;
+        --pr-parchment: #e7e2d4;
+      }
+
+      /* Class-themed accent variables — referenced by class picker cards */
+      .pr-class-warrior { --accent: #ef4444; --accent-soft: rgba(239,68,68,0.4); }
+      .pr-class-mage    { --accent: #818cf8; --accent-soft: rgba(129,140,248,0.4); }
+      .pr-class-ranger  { --accent: #34d399; --accent-soft: rgba(52,211,153,0.4); }
+
+      /* ── Reusable button (gold gilded) ─────────────────────────── */
+      .pr-btn {
+        font-family: var(--pr-display);
+        font-weight: 700;
+        letter-spacing: 4px;
+        font-size: 15px;
+        padding: 13px 22px;
+        color: var(--pr-parchment);
+        background:
+          linear-gradient(180deg, #2a1c08 0%, #1a1408 100%);
+        border: 2px solid var(--pr-gold);
+        border-radius: 4px;
+        cursor: pointer;
+        position: relative;
+        box-shadow:
+          0 0 0 1px var(--pr-ink) inset,
+          0 0 12px rgba(200,152,52,0.15),
+          0 4px 12px rgba(0,0,0,0.55);
+        transition: transform 0.08s ease, box-shadow 0.15s ease, color 0.15s ease;
+      }
+      .pr-btn:hover:not(:disabled) {
+        color: var(--pr-gold-bright);
+        box-shadow:
+          0 0 0 1px var(--pr-ink) inset,
+          0 0 20px rgba(252,209,64,0.45),
+          0 4px 14px rgba(0,0,0,0.6);
+      }
+      .pr-btn:active:not(:disabled) { transform: translateY(1px); }
+      .pr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .pr-btn-blood { border-color: #b91c1c; box-shadow: 0 0 0 1px var(--pr-ink) inset, 0 0 14px rgba(220,38,38,0.25), 0 4px 12px rgba(0,0,0,0.55); }
+      .pr-btn-blood:hover:not(:disabled) { color: #fecaca; box-shadow: 0 0 0 1px var(--pr-ink) inset, 0 0 22px rgba(248,113,113,0.55), 0 4px 14px rgba(0,0,0,0.6); }
+
+      .pr-btn-sage { border-color: #38bdf8; box-shadow: 0 0 0 1px var(--pr-ink) inset, 0 0 14px rgba(56,189,248,0.25), 0 4px 12px rgba(0,0,0,0.55); }
+      .pr-btn-sage:hover:not(:disabled) { color: #bae6fd; box-shadow: 0 0 0 1px var(--pr-ink) inset, 0 0 22px rgba(56,189,248,0.55), 0 4px 14px rgba(0,0,0,0.6); }
+
+      .pr-btn-ghost {
+        background: transparent;
+        border: 1px solid rgba(200,152,52,0.4);
+        color: #94a3b8;
+        font-family: var(--pr-body);
+        font-size: 12px;
+        font-weight: 400;
+        letter-spacing: 2px;
+        padding: 7px 14px;
+        box-shadow: none;
+      }
+      .pr-btn-ghost:hover:not(:disabled) { color: var(--pr-gold-bright); border-color: var(--pr-gold); box-shadow: 0 0 10px rgba(252,209,64,0.2); }
+
+      /* ── Input ───────────────────────────────────────────────────── */
+      .pr-input {
+        font-family: var(--pr-display);
+        font-size: 16px;
+        letter-spacing: 3px;
+        text-align: center;
+        padding: 12px 16px;
+        background: rgba(0,0,0,0.75);
+        color: var(--pr-gold-bright);
+        border: 2px solid rgba(200,152,52,0.45);
+        border-radius: 4px;
+        outline: none;
+        box-shadow: inset 0 0 12px rgba(0,0,0,0.7);
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .pr-input:focus { border-color: var(--pr-gold); box-shadow: inset 0 0 12px rgba(0,0,0,0.7), 0 0 14px rgba(252,209,64,0.3); }
+
+      /* ── Animations ──────────────────────────────────────────────── */
+      @keyframes pr-fade-in {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes pr-glow-pulse {
+        0%, 100% { box-shadow: 0 0 18px rgba(252,209,64,0.25); }
+        50%      { box-shadow: 0 0 28px rgba(252,209,64,0.55); }
+      }
+      .pr-fade-in { animation: pr-fade-in 320ms ease-out both; }
+
+      /* Decorative gilded panel (for menu/lobby/story cards) */
+      .pr-panel {
+        background:
+          linear-gradient(180deg, rgba(20,16,22,0.96), rgba(8,6,10,0.99));
+        border: 3px solid var(--pr-gold);
+        border-radius: 4px;
+        box-shadow:
+          0 0 0 2px var(--pr-ink) inset,
+          0 0 0 4px var(--pr-gold) inset,
+          0 0 0 5px var(--pr-ink) inset,
+          0 18px 50px rgba(0,0,0,0.85),
+          0 0 60px rgba(127,29,29,0.12);
+        position: relative;
+      }
+      .pr-panel::before, .pr-panel::after {
+        content: "";
+        position: absolute;
+        width: 16px; height: 16px;
+        background: var(--pr-gold);
+        transform: rotate(45deg);
+        box-shadow: 0 0 8px rgba(252,209,64,0.4);
+      }
+      .pr-panel::before { top: -10px; left: 50%; margin-left: -8px; }
+      .pr-panel::after  { bottom: -10px; left: 50%; margin-left: -8px; }
+    </style>
     <style>
       html, body {
         margin: 0;

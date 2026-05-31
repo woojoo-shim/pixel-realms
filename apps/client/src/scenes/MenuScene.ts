@@ -178,21 +178,15 @@ export class MenuScene extends Phaser.Scene {
 
     /* ── Central panel with gold-gilded ornate border ──────────────── */
     const panel = document.createElement("div");
+    panel.className = "pr-panel pr-fade-in";
     Object.assign(panel.style, {
       width: "min(360px, 88vw)",
-      padding: "20px 22px 22px",
-      background:
-        "linear-gradient(180deg, rgba(16,20,24,0.96), rgba(8,10,14,0.98))",
-      border: "3px solid #6b4f17",
-      borderRadius: "4px",
-      boxShadow:
-        "0 0 0 2px #2a1c08 inset, 0 0 0 4px #c89834 inset, 0 0 0 5px #2a1c08 inset, 0 18px 50px rgba(0,0,0,0.85), 0 0 80px rgba(110,231,183,0.08)",
+      padding: "26px 22px 22px",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       gap: "14px",
       pointerEvents: "auto",
-      position: "relative",
     } as CSSStyleDeclaration);
 
     /* ── Corner ornaments ──────────────────────────────────────────── */
@@ -235,12 +229,13 @@ export class MenuScene extends Phaser.Scene {
     } as CSSStyleDeclaration);
     panel.append(heroImg);
 
-    /* ── Title in mint pixel-style with glow ───────────────────────── */
+    /* ── Title in Cinzel display font with green glow ──────────────── */
     const title = document.createElement("div");
     title.textContent = "PIXEL REALMS";
     Object.assign(title.style, {
-      fontSize: "clamp(24px, 6.4vmin, 38px)",
-      letterSpacing: "clamp(3px, 1.3vmin, 8px)",
+      fontFamily: "var(--pr-display)",
+      fontSize: "clamp(26px, 6.5vmin, 42px)",
+      letterSpacing: "clamp(2px, 0.8vmin, 6px)",
       color: "#6ee7b7",
       textShadow:
         "0 0 14px rgba(110,231,183,0.7), 0 0 28px rgba(110,231,183,0.3), 0 3px 0 #064e3b",
@@ -306,9 +301,8 @@ export class MenuScene extends Phaser.Scene {
     loginBtn.onclick = () => this.mount("login");
 
     const signupBtn = this.bigButton("✨  회원가입");
-    signupBtn.style.background =
-      "linear-gradient(180deg, rgba(7,89,133,0.95), rgba(2,40,60,0.98))";
-    signupBtn.style.borderColor = "rgba(125,211,252,0.95)";
+    signupBtn.className = "pr-btn pr-btn-sage";
+    signupBtn.style.width = "100%";
     signupBtn.onclick = () => this.mount("register");
 
     stack.append(loginBtn, signupBtn);
@@ -328,26 +322,28 @@ export class MenuScene extends Phaser.Scene {
     const heading = document.createElement("div");
     heading.textContent = mode === "login" ? "로그인" : "회원가입";
     Object.assign(heading.style, {
-      fontSize: "16px",
-      fontWeight: "bold",
-      letterSpacing: "4px",
-      color: "#c89834",
+      fontFamily: "var(--pr-display)",
+      fontSize: "20px",
+      fontWeight: "700",
+      letterSpacing: "8px",
+      color: "var(--pr-gold-bright)",
       textAlign: "center",
       marginBottom: "4px",
+      textShadow: "0 2px 6px rgba(0,0,0,0.7)",
     } as CSSStyleDeclaration);
     card.append(heading);
 
     const idIn = document.createElement("input");
-    idIn.placeholder = "계정 아이디 (영문/숫자 2~16자)";
+    idIn.placeholder = "계정 아이디";
     idIn.maxLength = 16;
     idIn.autocomplete = "username";
-    Object.assign(idIn.style, this.inputStyle() as Partial<CSSStyleDeclaration>);
+    idIn.className = "pr-input";
 
     const pwIn = document.createElement("input");
     pwIn.placeholder = "비밀번호";
     pwIn.type = "password";
     pwIn.autocomplete = mode === "login" ? "current-password" : "new-password";
-    Object.assign(pwIn.style, this.inputStyle() as Partial<CSSStyleDeclaration>);
+    pwIn.className = "pr-input";
 
     const status = document.createElement("div");
     Object.assign(status.style, {
@@ -361,9 +357,8 @@ export class MenuScene extends Phaser.Scene {
       mode === "login" ? "🗝  로그인" : "✨  계정 만들기"
     );
     if (mode === "register") {
-      submitBtn.style.background =
-        "linear-gradient(180deg, rgba(7,89,133,0.95), rgba(2,40,60,0.98))";
-      submitBtn.style.borderColor = "rgba(125,211,252,0.95)";
+      submitBtn.className = "pr-btn pr-btn-sage";
+      submitBtn.style.width = "100%";
     }
 
     const back = this.smallButton("← 메뉴로");
@@ -482,9 +477,10 @@ export class MenuScene extends Phaser.Scene {
     const greet = document.createElement("div");
     greet.textContent = `환영합니다, ${this.lobby.username}`;
     Object.assign(greet.style, {
-      fontSize: "12px",
-      color: "#c89834",
-      letterSpacing: "2px",
+      fontFamily: "var(--pr-story)",
+      fontSize: "14px",
+      color: "var(--pr-gold)",
+      letterSpacing: "3px",
       textAlign: "center",
     } as CSSStyleDeclaration);
     panel.append(greet);
@@ -508,17 +504,20 @@ export class MenuScene extends Phaser.Scene {
       const name = document.createElement("div");
       name.textContent = char.displayName;
       Object.assign(name.style, {
-        fontSize: "16px",
-        fontWeight: "bold",
-        color: "#fde047",
-        letterSpacing: "3px",
+        fontFamily: "var(--pr-display)",
+        fontSize: "20px",
+        fontWeight: "700",
+        color: "var(--pr-gold-bright)",
+        letterSpacing: "4px",
+        textShadow: "0 0 12px rgba(252,209,64,0.4)",
       } as CSSStyleDeclaration);
       const meta = document.createElement("div");
       meta.textContent = `Lv ${char.level} · ${char.gold}g · ${char.mapId}`;
       Object.assign(meta.style, {
-        fontSize: "11px",
-        color: "#a8a29e",
-        letterSpacing: "1px",
+        fontFamily: "var(--pr-story)",
+        fontSize: "12px",
+        color: "#cbd5e1",
+        letterSpacing: "2px",
       } as CSSStyleDeclaration);
       slot.append(name, meta);
     } else {
@@ -599,26 +598,9 @@ export class MenuScene extends Phaser.Scene {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
-    Object.assign(b.style, {
-      pointerEvents: "auto",
-      padding: "14px 18px",
-      fontSize: "16px",
-      fontFamily: "monospace",
-      fontWeight: "bold",
-      letterSpacing: "4px",
-      color: "#fff7d6",
-      background:
-        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
-      border: "3px solid rgba(248,113,113,0.95)",
-      borderRadius: "8px",
-      cursor: "pointer",
-      boxShadow:
-        "0 4px 14px rgba(0,0,0,0.5), inset 0 -3px 6px rgba(0,0,0,0.4)",
-      transition: "transform 0.06s",
-    } as CSSStyleDeclaration);
-    b.addEventListener("mousedown", () => (b.style.transform = "scale(0.98)"));
-    b.addEventListener("mouseup", () => (b.style.transform = "scale(1)"));
-    b.addEventListener("mouseleave", () => (b.style.transform = "scale(1)"));
+    b.className = "pr-btn pr-btn-blood";
+    b.style.pointerEvents = "auto";
+    b.style.width = "100%";
     return b;
   }
 
@@ -626,18 +608,8 @@ export class MenuScene extends Phaser.Scene {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
-    Object.assign(b.style, {
-      pointerEvents: "auto",
-      padding: "8px 12px",
-      fontSize: "12px",
-      fontFamily: "monospace",
-      color: "#a8a29e",
-      background: "rgba(0,0,0,0.5)",
-      border: "1px solid rgba(168,162,158,0.4)",
-      borderRadius: "6px",
-      cursor: "pointer",
-      letterSpacing: "2px",
-    } as CSSStyleDeclaration);
+    b.className = "pr-btn pr-btn-ghost";
+    b.style.pointerEvents = "auto";
     return b;
   }
 
