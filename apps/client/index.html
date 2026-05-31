@@ -171,11 +171,10 @@
         50%, 85% { transform: rotate(-90deg); }
         100% { transform: rotate(-90deg); }
       }
-      /* Phone + portrait only — desktops and tablets in any orientation
-         and phones in landscape keep playing normally. */
-      @media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
-        #pr-rotate { display: flex; }
-      }
+      /* Visibility is toggled by JS (see <script> below) — body class
+         is more reliable than CSS media queries on mobile browsers,
+         which mis-report orientation when the address bar is visible. */
+      body.pr-needs-rotate #pr-rotate { display: flex; }
     </style>
     <style>
       html, body {
@@ -236,6 +235,51 @@
       <div class="pr-rotate-title">가로로 돌려주세요</div>
       <div class="pr-rotate-sub">Rotate your phone to landscape</div>
     </div>
+    <script>
+      // Phone-only landscape enforcement. CSS media queries are unreliable
+      // on mobile because the URL bar collapse/expand changes innerHeight.
+      // Use screen.orientation when available, fall back to a touch + size
+      // + aspect-ratio heuristic.
+      (function () {
+        function isPhone() {
+          var touch = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
+          if (!touch) return false;
+          // Use the larger dimension to avoid mis-classifying tablets.
+          var maxDim = Math.max(window.innerWidth, window.innerHeight);
+          return maxDim < 950;
+        }
+        function isPortrait() {
+          var o = (screen.orientation && screen.orientation.type) || '';
+          if (o) return o.indexOf('portrait') !== -1;
+          // Fallback: window aspect ratio. Add a tiny tolerance so a
+          // perfectly square inner box still counts as landscape.
+          return window.innerHeight > window.innerWidth + 20;
+        }
+        function refresh() {
+          var need = isPhone() && isPortrait();
+          document.body.classList.toggle('pr-needs-rotate', need);
+        }
+        // Run after first paint so element is available
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', refresh);
+        } else {
+          refresh();
+        }
+        window.addEventListener('resize', refresh);
+        window.addEventListener('orientationchange', refresh);
+        if (screen.orientation && screen.orientation.addEventListener) {
+          screen.orientation.addEventListener('change', refresh);
+        }
+        // Re-check shortly after orientation events to catch the address
+        // bar collapse animation on iOS.
+        ['orientationchange', 'resize'].forEach(function (ev) {
+          window.addEventListener(ev, function () {
+            setTimeout(refresh, 150);
+            setTimeout(refresh, 600);
+          });
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
