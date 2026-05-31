@@ -65,6 +65,8 @@ export interface CharacterData {
   displayName?: string;
   /** Player sprite hue in degrees (0..360). 170 ≈ default mint. */
   colorHue?: number;
+  /** Chosen class id ("warrior" | "mage" | "ranger" | …). Empty / undefined = unset. */
+  classId?: string;
 }
 
 interface Account {
@@ -107,6 +109,7 @@ export function makeStarterCharacter(name: string): CharacterData {
     /** Empty displayName signals "no character yet — show creation modal". */
     displayName: "",
     colorHue: 170,
+    classId: "",
   };
 }
 

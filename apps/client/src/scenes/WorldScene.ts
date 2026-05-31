@@ -34,6 +34,8 @@ import {
   playerDamage,
   playerSpeed,
   TUTORIAL_STEPS,
+  CLASSES,
+  STORY_SLIDES,
   type LootKind,
   type MapData,
   type MapId,
@@ -2073,6 +2075,7 @@ export class WorldScene extends Phaser.Scene {
 
   private showCharacterCreateModal(room: Room, suggestedName: string) {
     if (this.charCreateEl) return;
+
     const overlay = document.createElement("div");
     Object.assign(overlay.style, {
       position: "fixed",
@@ -2084,47 +2087,383 @@ export class WorldScene extends Phaser.Scene {
       justifyContent: "center",
       zIndex: "60",
       fontFamily: "monospace",
+      padding: "16px",
     } as CSSStyleDeclaration);
+
+    document.body.appendChild(overlay);
+    this.charCreateEl = overlay;
+
+    // Local picker state — captured across the 3 steps
+    let storyIdx = 0;
+    let pickedClassId = "warrior";
+    let pickedHue = 0; // overridden by class default when class chosen
+
+    const renderStory = () => this.renderStoryStep(overlay, storyIdx, () => {
+      storyIdx += 1;
+      if (storyIdx >= STORY_SLIDES.length) renderClassPicker();
+      else renderStory();
+    });
+    const renderClassPicker = () =>
+      this.renderClassStep(overlay, pickedClassId, (id) => {
+        pickedClassId = id;
+        const def = CLASSES.find((c) => c.id === id);
+        if (def) pickedHue = def.suggestedHue;
+        renderNameForm();
+      });
+    const renderNameForm = () =>
+      this.renderNameStep(
+        overlay,
+        suggestedName,
+        pickedClassId,
+        pickedHue,
+        (name, hue) => {
+          room.send("createCharacter", {
+            name,
+            colorHue: hue,
+            classId: pickedClassId,
+          });
+        },
+        (h) => (pickedHue = h),
+        () => renderClassPicker()
+      );
+
+    // Skip story if already seen on this device.
+    if (localStorage.getItem("pr:storySeen") === "1") {
+      storyIdx = STORY_SLIDES.length;
+      renderClassPicker();
+    } else {
+      renderStory();
+    }
+  }
+
+  /* ── Step 1: Story slide ───────────────────────────────────────── */
+  private renderStoryStep(
+    overlay: HTMLDivElement,
+    idx: number,
+    onNext: () => void
+  ) {
+    overlay.innerHTML = "";
+    const slide = STORY_SLIDES[idx];
+    if (!slide) return;
     const card = document.createElement("div");
     Object.assign(card.style, {
-      width: "min(360px, 90vw)",
-      padding: "22px 20px",
-      borderRadius: "12px",
-      background: "linear-gradient(180deg, #1c1018, #0b070d)",
-      border: "2px solid #7f1d1d",
+      width: "min(420px, 92vw)",
+      padding: "26px 22px",
+      borderRadius: "10px",
+      background: "linear-gradient(180deg, #0d0710, #050308)",
+      border: "2px solid #4a3a18",
       boxShadow:
-        "0 18px 50px rgba(0,0,0,0.7), inset 0 0 28px rgba(220,38,38,0.18)",
-      color: "#fff",
+        "0 18px 50px rgba(0,0,0,0.75), inset 0 0 28px rgba(120,80,30,0.22)",
+      color: "#e7e2d4",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "16px",
+      textAlign: "center",
+    } as CSSStyleDeclaration);
+    const step = document.createElement("div");
+    step.textContent = `${idx + 1} / ${STORY_SLIDES.length}`;
+    Object.assign(step.style, {
+      fontSize: "10px",
+      color: "#9ca3af",
+      letterSpacing: "3px",
+    } as CSSStyleDeclaration);
+    const body = document.createElement("div");
+    body.textContent = slide.body;
+    Object.assign(body.style, {
+      fontSize: "14px",
+      lineHeight: "1.7",
+      color: "#fde047",
+      whiteSpace: "pre-line",
+      padding: "8px 0",
+      minHeight: "120px",
+    } as CSSStyleDeclaration);
+    const nextBtn = document.createElement("button");
+    nextBtn.type = "button";
+    nextBtn.textContent =
+      idx === STORY_SLIDES.length - 1 ? "▶  계속" : "▶  다음";
+    Object.assign(nextBtn.style, {
+      padding: "12px 22px",
+      fontSize: "14px",
+      fontFamily: "monospace",
+      letterSpacing: "3px",
+      color: "#fff7d6",
+      background:
+        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
+      border: "2px solid rgba(248,113,113,0.95)",
+      borderRadius: "6px",
+      cursor: "pointer",
+    } as CSSStyleDeclaration);
+    nextBtn.onclick = () => onNext();
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.textContent = "스킵 →";
+    Object.assign(skip.style, {
+      background: "transparent",
+      border: "none",
+      color: "#9ca3af",
+      cursor: "pointer",
+      fontSize: "11px",
+      letterSpacing: "2px",
+      padding: "2px",
+      fontFamily: "monospace",
+    } as CSSStyleDeclaration);
+    skip.onclick = () => {
+      localStorage.setItem("pr:storySeen", "1");
+      this.renderClassStep(overlay, "warrior", (id) => {
+        // Re-route to name step from inside the closure of show...Modal
+        // by re-dispatching: easier path is to dismiss + show again with
+        // story flag set, but we're inside the existing flow so just call
+        // renderClassStep here and rely on the same picker callback.
+        const onPick = (cid: string) => {
+          const def = CLASSES.find((c) => c.id === cid);
+          const hue = def?.suggestedHue ?? 0;
+          this.renderNameStep(
+            overlay,
+            "",
+            cid,
+            hue,
+            (n, h) => {
+              // captured room reference — pull from charCreateEl owner
+              // but we don't have it here; use a custom event instead.
+              overlay.dispatchEvent(
+                new CustomEvent("char-submit", {
+                  detail: { name: n, colorHue: h, classId: cid },
+                })
+              );
+            },
+            (_) => {},
+            () => this.renderClassStep(overlay, cid, onPick)
+          );
+        };
+        onPick(id);
+      });
+    };
+    card.append(step, body, nextBtn, skip);
+    overlay.appendChild(card);
+    // Mark seen as soon as the first slide is shown.
+    localStorage.setItem("pr:storySeen", "1");
+  }
+
+  /* ── Step 2: Class picker (3 cards) ────────────────────────────── */
+  private renderClassStep(
+    overlay: HTMLDivElement,
+    initialId: string,
+    onPicked: (classId: string) => void
+  ) {
+    overlay.innerHTML = "";
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      width: "min(520px, 94vw)",
+      maxHeight: "92vh",
+      overflowY: "auto",
+      padding: "22px 20px",
+      borderRadius: "10px",
+      background: "linear-gradient(180deg, #0d0710, #050308)",
+      border: "2px solid #4a3a18",
+      boxShadow:
+        "0 18px 50px rgba(0,0,0,0.75), inset 0 0 28px rgba(120,80,30,0.22)",
+      color: "#e7e2d4",
       display: "flex",
       flexDirection: "column",
       gap: "14px",
-      textAlign: "center",
     } as CSSStyleDeclaration);
-    const title = document.createElement("div");
-    title.textContent = "캐릭터 만들기";
-    Object.assign(title.style, {
-      fontSize: "clamp(18px, 4vmin, 22px)",
+    const heading = document.createElement("div");
+    heading.textContent = "직업을 골라라";
+    Object.assign(heading.style, {
+      fontSize: "20px",
       fontWeight: "bold",
-      letterSpacing: "4px",
+      letterSpacing: "5px",
       color: "#fde047",
+      textAlign: "center",
       textShadow: "0 2px 6px #000",
     } as CSSStyleDeclaration);
     const sub = document.createElement("div");
-    sub.textContent = "이 이름으로 게임에 표시됩니다";
+    sub.textContent = "선택은 영구적이지 않습니다 — 캐릭터 만들면 적용됨";
+    Object.assign(sub.style, {
+      fontSize: "10px",
+      color: "#9ca3af",
+      textAlign: "center",
+      letterSpacing: "1px",
+      marginBottom: "4px",
+    } as CSSStyleDeclaration);
+
+    let selected = initialId;
+    const cards: HTMLDivElement[] = [];
+    const grid = document.createElement("div");
+    Object.assign(grid.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+    } as CSSStyleDeclaration);
+
+    const refresh = () => {
+      cards.forEach((c, i) => {
+        const def = CLASSES[i];
+        const isPicked = def.id === selected;
+        c.style.borderColor = isPicked ? "#fde047" : "rgba(252,165,165,0.25)";
+        c.style.background = isPicked
+          ? "linear-gradient(180deg, rgba(60,42,12,0.85), rgba(20,12,4,0.95))"
+          : "rgba(8,5,12,0.75)";
+        c.style.boxShadow = isPicked
+          ? "0 0 14px rgba(252,165,165,0.55), inset 0 0 18px rgba(120,80,30,0.2)"
+          : "none";
+      });
+    };
+
+    CLASSES.forEach((def) => {
+      const c = document.createElement("div");
+      Object.assign(c.style, {
+        padding: "12px 14px",
+        border: "2px solid rgba(252,165,165,0.25)",
+        borderRadius: "8px",
+        background: "rgba(8,5,12,0.75)",
+        cursor: "pointer",
+        display: "flex",
+        gap: "12px",
+        alignItems: "flex-start",
+        transition: "transform 0.08s",
+      } as CSSStyleDeclaration);
+      const icon = document.createElement("div");
+      icon.textContent = def.icon;
+      Object.assign(icon.style, {
+        fontSize: "34px",
+        lineHeight: "1",
+        width: "44px",
+        textAlign: "center",
+        filter: "drop-shadow(0 0 8px rgba(252,165,165,0.5))",
+      } as CSSStyleDeclaration);
+      const right = document.createElement("div");
+      Object.assign(right.style, {
+        flex: "1",
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+      } as CSSStyleDeclaration);
+      const nameRow = document.createElement("div");
+      Object.assign(nameRow.style, {
+        display: "flex",
+        gap: "8px",
+        alignItems: "baseline",
+      } as CSSStyleDeclaration);
+      const nm = document.createElement("div");
+      nm.textContent = def.name;
+      Object.assign(nm.style, {
+        fontSize: "16px",
+        fontWeight: "bold",
+        color: "#fde047",
+        letterSpacing: "3px",
+      } as CSSStyleDeclaration);
+      const tag = document.createElement("div");
+      tag.textContent = def.tagline;
+      Object.assign(tag.style, {
+        fontSize: "10px",
+        color: "#9ca3af",
+        letterSpacing: "2px",
+      } as CSSStyleDeclaration);
+      nameRow.append(nm, tag);
+      const desc = document.createElement("div");
+      desc.textContent = def.description;
+      Object.assign(desc.style, {
+        fontSize: "11px",
+        color: "#cbd5e1",
+        whiteSpace: "pre-line",
+        lineHeight: "1.4",
+      } as CSSStyleDeclaration);
+      const stats = document.createElement("div");
+      const sBits: string[] = [];
+      if (def.baseHpBonus) sBits.push(`HP ${def.baseHpBonus > 0 ? "+" : ""}${def.baseHpBonus}`);
+      if (def.baseMpBonus) sBits.push(`MP ${def.baseMpBonus > 0 ? "+" : ""}${def.baseMpBonus}`);
+      if (def.baseStr) sBits.push(`STR +${def.baseStr}`);
+      if (def.baseVit) sBits.push(`VIT +${def.baseVit}`);
+      if (def.baseMnd) sBits.push(`MND +${def.baseMnd}`);
+      if (def.baseQck) sBits.push(`QCK +${def.baseQck}`);
+      stats.textContent = sBits.join(" · ");
+      Object.assign(stats.style, {
+        fontSize: "10px",
+        color: "#94a3b8",
+        letterSpacing: "1px",
+        marginTop: "2px",
+      } as CSSStyleDeclaration);
+      right.append(nameRow, desc, stats);
+      c.append(icon, right);
+      c.onclick = () => {
+        selected = def.id;
+        refresh();
+      };
+      cards.push(c);
+      grid.appendChild(c);
+    });
+    refresh();
+
+    const next = document.createElement("button");
+    next.type = "button";
+    next.textContent = "▶  다음 (이름 짓기)";
+    Object.assign(next.style, {
+      padding: "12px 18px",
+      fontSize: "14px",
+      fontFamily: "monospace",
+      letterSpacing: "3px",
+      color: "#fff7d6",
+      background:
+        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
+      border: "2px solid rgba(248,113,113,0.95)",
+      borderRadius: "6px",
+      cursor: "pointer",
+      marginTop: "4px",
+    } as CSSStyleDeclaration);
+    next.onclick = () => onPicked(selected);
+
+    card.append(heading, sub, grid, next);
+    overlay.appendChild(card);
+  }
+
+  /* ── Step 3: Name + colour ─────────────────────────────────────── */
+  private renderNameStep(
+    overlay: HTMLDivElement,
+    suggestedName: string,
+    classId: string,
+    initialHue: number,
+    onSubmit: (name: string, colorHue: number) => void,
+    onHueChange: (hue: number) => void,
+    onBack: () => void
+  ) {
+    overlay.innerHTML = "";
+    const def = CLASSES.find((c) => c.id === classId);
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      width: "min(360px, 92vw)",
+      padding: "22px 20px",
+      borderRadius: "10px",
+      background: "linear-gradient(180deg, #0d0710, #050308)",
+      border: "2px solid #4a3a18",
+      boxShadow:
+        "0 18px 50px rgba(0,0,0,0.75), inset 0 0 28px rgba(120,80,30,0.22)",
+      color: "#e7e2d4",
+      display: "flex",
+      flexDirection: "column",
+      gap: "12px",
+      textAlign: "center",
+    } as CSSStyleDeclaration);
+
+    const heading = document.createElement("div");
+    heading.textContent = `${def?.icon ?? "⚔"}  ${def?.name ?? "영웅"}`;
+    Object.assign(heading.style, {
+      fontSize: "20px",
+      fontWeight: "bold",
+      letterSpacing: "4px",
+      color: "#fde047",
+    } as CSSStyleDeclaration);
+
+    const sub = document.createElement("div");
+    sub.textContent = "이름과 색을 정하세요";
     Object.assign(sub.style, {
       fontSize: "11px",
       color: "#9ca3af",
       letterSpacing: "1px",
+      marginBottom: "4px",
     } as CSSStyleDeclaration);
 
-    const nameLabel = document.createElement("div");
-    nameLabel.textContent = "이름";
-    Object.assign(nameLabel.style, {
-      fontSize: "11px",
-      color: "#fca5a5",
-      letterSpacing: "2px",
-      textAlign: "left",
-    } as CSSStyleDeclaration);
     const nameInput = document.createElement("input");
     nameInput.placeholder = "내 영웅의 이름";
     nameInput.maxLength = 16;
@@ -2133,7 +2472,7 @@ export class WorldScene extends Phaser.Scene {
       padding: "11px 14px",
       background: "rgba(0,0,0,0.65)",
       color: "#fde047",
-      border: "2px solid rgba(252,165,165,0.5)",
+      border: "2px solid rgba(252,165,165,0.45)",
       borderRadius: "6px",
       fontFamily: "monospace",
       fontSize: "15px",
@@ -2142,30 +2481,24 @@ export class WorldScene extends Phaser.Scene {
       outline: "none",
     } as CSSStyleDeclaration);
 
-    const colorLabel = document.createElement("div");
-    colorLabel.textContent = "색깔";
-    Object.assign(colorLabel.style, {
-      fontSize: "11px",
-      color: "#fca5a5",
-      letterSpacing: "2px",
-      textAlign: "left",
-    } as CSSStyleDeclaration);
+    let pickedHue = initialHue;
     const palette = document.createElement("div");
     Object.assign(palette.style, {
       display: "grid",
       gridTemplateColumns: "repeat(8, 1fr)",
       gap: "6px",
       justifyItems: "center",
+      marginTop: "4px",
     } as CSSStyleDeclaration);
-    // 8 hues spread around the wheel
     const hues = [0, 30, 60, 110, 170, 210, 260, 310];
-    let pickedHue = 170;
     let pickedSwatch: HTMLButtonElement | undefined;
-    const refreshSwatches = () => {
+    const refresh = () => {
       Array.from(palette.children).forEach((c) => {
         const s = c as HTMLButtonElement;
         s.style.outline =
-          s === pickedSwatch ? "3px solid #fde047" : "2px solid rgba(255,255,255,0.15)";
+          s === pickedSwatch
+            ? "3px solid #fde047"
+            : "2px solid rgba(255,255,255,0.15)";
         s.style.transform = s === pickedSwatch ? "scale(1.12)" : "scale(1)";
       });
     };
@@ -2185,14 +2518,14 @@ export class WorldScene extends Phaser.Scene {
       sw.addEventListener("click", () => {
         pickedHue = h;
         pickedSwatch = sw;
-        refreshSwatches();
+        onHueChange(h);
+        refresh();
       });
       palette.appendChild(sw);
-      if (h === 170) {
-        pickedSwatch = sw;
-      }
+      if (Math.abs(h - initialHue) < 20) pickedSwatch = sw;
     });
-    refreshSwatches();
+    if (!pickedSwatch) pickedSwatch = palette.children[4] as HTMLButtonElement;
+    refresh();
 
     const err = document.createElement("div");
     Object.assign(err.style, {
@@ -2201,13 +2534,14 @@ export class WorldScene extends Phaser.Scene {
       color: "#fca5a5",
       letterSpacing: "1px",
     } as CSSStyleDeclaration);
+    this.charCreateErrEl = err;
 
     const submit = document.createElement("button");
     submit.type = "button";
     submit.textContent = "⚔  모험 시작";
     Object.assign(submit.style, {
-      padding: "14px 18px",
-      fontSize: "15px",
+      padding: "13px 18px",
+      fontSize: "14px",
       fontFamily: "monospace",
       fontWeight: "bold",
       letterSpacing: "4px",
@@ -2217,8 +2551,6 @@ export class WorldScene extends Phaser.Scene {
       border: "3px solid rgba(248,113,113,0.95)",
       borderRadius: "8px",
       cursor: "pointer",
-      boxShadow:
-        "0 4px 14px rgba(0,0,0,0.5), inset 0 -3px 6px rgba(0,0,0,0.4)",
     } as CSSStyleDeclaration);
     const send = () => {
       err.textContent = "";
@@ -2227,18 +2559,30 @@ export class WorldScene extends Phaser.Scene {
         err.textContent = "이름이 너무 짧아요";
         return;
       }
-      room.send("createCharacter", { name, colorHue: pickedHue });
+      onSubmit(name, pickedHue);
     };
     submit.addEventListener("click", send);
     nameInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") send();
     });
 
-    card.append(title, sub, nameLabel, nameInput, colorLabel, palette, err, submit);
+    const back = document.createElement("button");
+    back.type = "button";
+    back.textContent = "← 직업 다시 고르기";
+    Object.assign(back.style, {
+      background: "transparent",
+      border: "none",
+      color: "#9ca3af",
+      cursor: "pointer",
+      fontSize: "11px",
+      letterSpacing: "2px",
+      padding: "4px",
+      fontFamily: "monospace",
+    } as CSSStyleDeclaration);
+    back.onclick = onBack;
+
+    card.append(heading, sub, nameInput, palette, err, submit, back);
     overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    this.charCreateEl = overlay;
-    this.charCreateErrEl = err;
     setTimeout(() => nameInput.focus(), 50);
   }
 

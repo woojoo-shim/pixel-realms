@@ -376,3 +376,12 @@ export type { SkillBranch, SkillDef } from "./skills.js";
 export * from "./tutorial.js";
 export type { TutorialStep, TutorialTrigger } from "./tutorial.js";
 
+
+
+export * from "./classes.js";
+export type { ClassId, ClassDef } from "./classes.js";
+export * from "./professions.js";
+export type { ProfessionId, ProfessionDef } from "./professions.js";
+export * from "./story.js";
+export type { StorySlide } from "./story.js";
+

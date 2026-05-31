@@ -74,6 +74,8 @@ import {
   SKILL_EFFECT,
   SKILL_IDS,
   TUTORIAL_STEPS,
+  CLASS_IDS,
+  getClass,
   getSkillDef,
   type TutorialTrigger,
   type LootKind,
@@ -292,10 +294,15 @@ export class WorldRoom extends Room<WorldState> {
     this.onMessage<{ skillId: string }>("allocateSkill", (client, msg) => {
       this.handleAllocateSkill(client.sessionId, msg?.skillId);
     });
-    this.onMessage<{ name: string; colorHue?: number }>(
+    this.onMessage<{ name: string; colorHue?: number; classId?: string }>(
       "createCharacter",
       (client, msg) => {
-        this.handleCreateCharacter(client, msg?.name, msg?.colorHue);
+        this.handleCreateCharacter(
+          client,
+          msg?.name,
+          msg?.colorHue,
+          msg?.classId
+        );
       }
     );
 
@@ -1420,7 +1427,8 @@ export class WorldRoom extends Room<WorldState> {
   private handleCreateCharacter(
     client: Client,
     nameRaw?: string,
-    colorHue?: number
+    colorHue?: number,
+    classIdRaw?: string
   ) {
     const sessionId = client.sessionId;
     if (!this.needsCharacter.has(sessionId)) return;
@@ -1434,13 +1442,39 @@ export class WorldRoom extends Room<WorldState> {
       });
       return;
     }
+    // Validate class
+    const classId =
+      classIdRaw && CLASS_IDS.includes(classIdRaw as (typeof CLASS_IDS)[number])
+        ? classIdRaw
+        : "warrior";
+    const def = getClass(classId)!;
     const hue = Number.isFinite(colorHue)
       ? Math.max(0, Math.min(360, colorHue!))
-      : 170;
+      : def.suggestedHue;
     p.name = name;
     p.colorHue = hue;
+    p.classId = classId;
+    // Apply class starter stats — bonuses are additive on top of base.
+    p.statStr += def.baseStr;
+    p.statVit += def.baseVit;
+    p.statMnd += def.baseMnd;
+    p.statQck += def.baseQck;
+    // Grant starting skills (1 level each, doesn't consume points)
+    for (const sid of def.startingSkills) {
+      const cur = p.skillLevels.get(sid) ?? 0;
+      if (cur === 0) p.skillLevels.set(sid, 1);
+    }
+    // Recompute maxes (class bonuses + skill grants may affect them)
+    recomputeDerived(p);
+    p.maxHp += def.baseHpBonus;
+    p.maxMp += def.baseMpBonus;
+    if (p.maxHp < 1) p.maxHp = 1;
+    if (p.maxMp < 0) p.maxMp = 0;
+    p.hp = p.maxHp;
+    p.mp = p.maxMp;
+
     this.needsCharacter.delete(sessionId);
-    client.send("character-created", { name, colorHue: hue });
+    client.send("character-created", { name, colorHue: hue, classId });
     // Persist immediately — the user just made an important choice.
     const username = this.sessionAccount.get(sessionId);
     if (username) {
@@ -1747,6 +1781,7 @@ export class WorldRoom extends Room<WorldState> {
       p.name = c.displayName;
     }
     p.colorHue = c.colorHue ?? 170;
+    p.classId = c.classId ?? "";
     return p;
   }
 
@@ -1796,6 +1831,7 @@ export class WorldRoom extends Room<WorldState> {
       tutorialStep: p.tutorialStep,
       displayName: p.name,
       colorHue: p.colorHue,
+      classId: p.classId,
     };
   }
 
