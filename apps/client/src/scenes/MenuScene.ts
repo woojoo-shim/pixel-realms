@@ -14,12 +14,26 @@ import {
  * possible: pick what you want first (login or register), then fill the
  * form.
  */
-type View = "title" | "login" | "register";
+type View = "title" | "login" | "register" | "lobby";
+
+interface LobbyState {
+  username: string;
+  password: string;
+  character: {
+    displayName: string;
+    level: number;
+    gold: number;
+    colorHue: number;
+    mapId: string;
+  } | null;
+}
 
 export class MenuScene extends Phaser.Scene {
   private overlay?: HTMLDivElement;
   private oauthToken: string | null = null;
   private oauthDisplayName: string | null = null;
+  /** Set after a successful login/register, used by the lobby view. */
+  private lobby: LobbyState | null = null;
 
   constructor() {
     super("menu");
@@ -271,6 +285,7 @@ export class MenuScene extends Phaser.Scene {
     if (view === "title") this.renderTitle(panel);
     else if (view === "login") this.renderForm(panel, "login");
     else if (view === "register") this.renderForm(panel, "register");
+    else if (view === "lobby") this.renderLobby(panel);
 
     overlay.append(panel);
     document.body.append(overlay);
@@ -355,7 +370,7 @@ export class MenuScene extends Phaser.Scene {
     back.style.marginTop = "8px";
     back.onclick = () => this.mount("title");
 
-    const submit = () => {
+    const submit = async () => {
       status.style.color = "#fca5a5";
       const name = idIn.value.trim();
       const pw = pwIn.value;
@@ -379,12 +394,32 @@ export class MenuScene extends Phaser.Scene {
       status.textContent =
         (mode === "login" ? "로그인 중…" : "계정 만드는 중…") +
         " (서버가 자고 있으면 최대 30초 걸려요)";
-      this.scene.start("world", {
-        mode: "quick",
-        username: name,
-        password: pw,
-        authMode: mode === "login" ? "login" : "register",
-      });
+      try {
+        const result = await this.callAccountLogin(name, pw, mode);
+        if (!result.ok) {
+          status.style.color = "#fca5a5";
+          status.textContent = this.reasonToKo(result.reason);
+          submitBtn.disabled = false;
+          back.disabled = false;
+          idIn.disabled = false;
+          pwIn.disabled = false;
+          return;
+        }
+        // Stash credentials + character summary, advance to lobby.
+        this.lobby = {
+          username: result.username,
+          password: pw,
+          character: result.character ?? null,
+        };
+        this.mount("lobby");
+      } catch (e) {
+        status.style.color = "#fca5a5";
+        status.textContent = `서버 연결 실패: ${(e as Error).message}`;
+        submitBtn.disabled = false;
+        back.disabled = false;
+        idIn.disabled = false;
+        pwIn.disabled = false;
+      }
     };
     submitBtn.onclick = submit;
     [idIn, pwIn].forEach((el) =>
@@ -396,6 +431,132 @@ export class MenuScene extends Phaser.Scene {
     card.append(idIn, pwIn, submitBtn, status, back);
     panel.append(card);
     setTimeout(() => idIn.focus(), 50);
+  }
+
+  /* ── HTTP: pre-flight login (returns char summary before joining room) ── */
+  private async callAccountLogin(
+    username: string,
+    password: string,
+    mode: "login" | "register"
+  ): Promise<{
+    ok: true;
+    username: string;
+    character: LobbyState["character"];
+  } | { ok: false; reason: string }> {
+    const wsUrl =
+      (import.meta as { env?: Record<string, string | undefined> }).env
+        ?.VITE_SERVER_URL ?? "";
+    const httpUrl = wsUrl
+      ? wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:")
+      : `http://${window.location.hostname}:2567`;
+    const res = await fetch(`${httpUrl}/account/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, authMode: mode }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  private reasonToKo(reason: string): string {
+    switch (reason) {
+      case "no_such_account":
+        return "이 아이디로 가입된 계정이 없습니다. 회원가입을 먼저 하세요.";
+      case "name_taken":
+        return "이미 사용 중인 아이디입니다.";
+      case "bad_password":
+        return "비밀번호가 틀렸습니다.";
+      case "invalid_name":
+        return "아이디 형식이 잘못됐습니다.";
+      default:
+        return `오류: ${reason}`;
+    }
+  }
+
+  /* ── Lobby view: character slot + play / create ──────────────────── */
+  private renderLobby(panel: HTMLDivElement) {
+    if (!this.lobby) {
+      this.mount("title");
+      return;
+    }
+    const greet = document.createElement("div");
+    greet.textContent = `환영합니다, ${this.lobby.username}`;
+    Object.assign(greet.style, {
+      fontSize: "12px",
+      color: "#c89834",
+      letterSpacing: "2px",
+      textAlign: "center",
+    } as CSSStyleDeclaration);
+    panel.append(greet);
+
+    const slot = document.createElement("div");
+    Object.assign(slot.style, {
+      width: "100%",
+      padding: "14px 14px",
+      borderRadius: "6px",
+      border: "2px solid #4a3a18",
+      background:
+        "linear-gradient(180deg, rgba(20,16,10,0.85), rgba(10,8,6,0.95))",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "8px",
+    } as CSSStyleDeclaration);
+
+    const char = this.lobby.character;
+    if (char) {
+      const name = document.createElement("div");
+      name.textContent = char.displayName;
+      Object.assign(name.style, {
+        fontSize: "16px",
+        fontWeight: "bold",
+        color: "#fde047",
+        letterSpacing: "3px",
+      } as CSSStyleDeclaration);
+      const meta = document.createElement("div");
+      meta.textContent = `Lv ${char.level} · ${char.gold}g · ${char.mapId}`;
+      Object.assign(meta.style, {
+        fontSize: "11px",
+        color: "#a8a29e",
+        letterSpacing: "1px",
+      } as CSSStyleDeclaration);
+      slot.append(name, meta);
+    } else {
+      const empty = document.createElement("div");
+      empty.textContent = "캐릭터가 아직 없어요";
+      Object.assign(empty.style, {
+        fontSize: "13px",
+        color: "#a8a29e",
+      } as CSSStyleDeclaration);
+      const hint = document.createElement("div");
+      hint.textContent = "플레이 시작하면 캐릭터 만들기 화면이 떠요";
+      Object.assign(hint.style, {
+        fontSize: "10px",
+        color: "#6b7280",
+        textAlign: "center",
+      } as CSSStyleDeclaration);
+      slot.append(empty, hint);
+    }
+    panel.append(slot);
+
+    const playBtn = this.bigButton(char ? "⚔  플레이" : "✨  캐릭터 만들기");
+    playBtn.onclick = () => {
+      this.scene.start("world", {
+        mode: "quick",
+        username: this.lobby!.username,
+        password: this.lobby!.password,
+        authMode: "login",
+      });
+    };
+    panel.append(playBtn);
+
+    const out = this.smallButton("← 로그아웃");
+    out.style.marginTop = "4px";
+    out.onclick = () => {
+      this.lobby = null;
+      this.mount("title");
+    };
+    panel.append(out);
   }
 
   /* ── Style helpers ───────────────────────────────────────────────── */
