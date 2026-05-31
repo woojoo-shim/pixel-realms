@@ -9,13 +9,15 @@ import {
 } from "../auth/supabase.js";
 
 /**
- * Title screen — Diablo-flavoured, dark background with rising embers
- * and a DOM overlay for the name input + "Enter World" button.
+ * Title screen — a 3-state DOM overlay (title → login → register) sitting
+ * on top of a Phaser-rendered dark backdrop. Keeps the flow as plain as
+ * possible: pick what you want first (login or register), then fill the
+ * form.
  */
+type View = "title" | "login" | "register";
+
 export class MenuScene extends Phaser.Scene {
   private overlay?: HTMLDivElement;
-  private emberTimer?: Phaser.Time.TimerEvent;
-  /** Cached Supabase session (set after getSession() resolves). */
   private oauthToken: string | null = null;
   private oauthDisplayName: string | null = null;
 
@@ -24,12 +26,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
-    // Render free tier sleeps after 15min idle. Fire a one-shot HEAD ping
-    // the instant the menu opens so the server has 5–30s to wake up while
-    // the player is reading the title screen and typing credentials.
-    // Without this the first join attempt always times out after a long
-    // cold start. We intentionally swallow errors — the join itself will
-    // surface the real failure if the server is genuinely down.
+    /* ── Pre-warm Render free-tier server (it sleeps after 15min idle) ── */
     const wsUrl =
       (import.meta as { env?: Record<string, string | undefined> }).env
         ?.VITE_SERVER_URL ?? "";
@@ -40,588 +37,411 @@ export class MenuScene extends Phaser.Scene {
       void fetch(`${httpUrl}/health`, { mode: "cors" }).catch(() => {});
     }
 
-    this.cameras.main.setBackgroundColor("#070405");
+    /* ── Backdrop ─────────────────────────────────────────────────── */
+    this.drawBackdrop();
+    this.scale.on("resize", () => {
+      this.children.removeAll();
+      this.drawBackdrop();
+    });
 
-    /* Layered dark gradient backdrop (top-left torch glow → black corners) */
+    /* ── OAuth handling (read URL hash, populate session) ─────────── */
+    cleanOAuthHash();
+    void getSession().then((s) => {
+      if (s?.access_token) {
+        this.oauthToken = s.access_token;
+        const meta = (s.user?.user_metadata ?? {}) as Record<string, unknown>;
+        const name =
+          (typeof meta.full_name === "string" && meta.full_name) ||
+          (typeof meta.name === "string" && meta.name) ||
+          (typeof meta.user_name === "string" && meta.user_name) ||
+          s.user?.email?.split("@")[0] ||
+          "Adventurer";
+        this.oauthDisplayName = String(name).slice(0, 16);
+        // Re-render title with signed-in state.
+        this.mount("title");
+      }
+    });
+    // Mount the title immediately so the user sees something while
+    // getSession() resolves; it'll re-render once OAuth state arrives.
+    this.mount("title");
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
+  }
+
+  /* ── Backdrop drawing ────────────────────────────────────────────── */
+  private drawBackdrop() {
     const w = this.scale.width;
     const h = this.scale.height;
+    this.cameras.main.setBackgroundColor("#070405");
     const bg = this.add.graphics().setScrollFactor(0).setDepth(0);
-    // distant warm glow at top
-    bg.fillStyle(0x451a07, 0.6);
-    bg.fillEllipse(w * 0.5, h * 0.25, w * 1.2, h * 0.8);
     bg.fillStyle(0x1a0a07, 1);
     bg.fillRect(0, 0, w, h);
-    bg.fillStyle(0x2a1006, 0.65);
-    bg.fillEllipse(w * 0.5, h * 0.6, w * 1.4, h * 0.9);
-
-    /* Sigil ring behind title (decorative circle) */
-    const sigil = this.add
-      .graphics()
-      .setScrollFactor(0)
-      .setDepth(1);
-    sigil.lineStyle(2, 0x7f1d1d, 0.5);
-    sigil.strokeCircle(w * 0.5, h * 0.32, Math.min(w, h) * 0.22);
-    sigil.lineStyle(1, 0xb91c1c, 0.4);
-    sigil.strokeCircle(w * 0.5, h * 0.32, Math.min(w, h) * 0.26);
-    this.tweens.add({
-      targets: sigil,
-      alpha: 0.5,
-      duration: 2200,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.InOut",
-    });
-
-    /* Rising embers — emit one every ~80ms from the bottom */
-    this.emberTimer = this.time.addEvent({
-      delay: 70,
-      loop: true,
-      callback: () => this.spawnEmber(w, h),
-    });
-
-    this.buildOverlay();
-
-    this.scale.on("resize", this.onResize, this);
-
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.overlay?.remove();
-      this.overlay = undefined;
-      this.emberTimer?.remove();
-      this.scale.off("resize", this.onResize, this);
-    });
+    bg.fillStyle(0x451a07, 0.55);
+    bg.fillEllipse(w * 0.5, h * 0.18, w * 1.3, h * 0.6);
+    bg.fillStyle(0x2a1006, 0.55);
+    bg.fillEllipse(w * 0.5, h * 0.72, w * 1.6, h * 0.95);
+    // Faint sigil circle behind the title
+    const sigil = this.add.graphics().setScrollFactor(0).setDepth(1);
+    sigil.lineStyle(2, 0x7f1d1d, 0.35);
+    sigil.strokeCircle(w * 0.5, h * 0.32, Math.min(w, h) * 0.18);
+    sigil.lineStyle(1, 0xfbbf24, 0.25);
+    sigil.strokeCircle(w * 0.5, h * 0.32, Math.min(w, h) * 0.18 + 12);
   }
 
-  private onResize = () => {
-    /* For simplicity, the DOM overlay handles its own resize via CSS. */
-  };
-
-  private spawnEmber(w: number, h: number) {
-    const x = Math.random() * w;
-    const y = h + 10;
-    const size = 1 + Math.random() * 2;
-    const tint =
-      Math.random() < 0.4
-        ? 0xfdba74
-        : Math.random() < 0.6
-          ? 0xff7043
-          : 0xfde047;
-    const e = this.add.circle(x, y, size, tint, 1).setScrollFactor(0).setDepth(2);
-    const driftX = (Math.random() - 0.5) * 60;
-    this.tweens.add({
-      targets: e,
-      x: x + driftX,
-      y: -10,
-      alpha: { from: 0.9, to: 0 },
-      duration: 3500 + Math.random() * 2000,
-      onComplete: () => e.destroy(),
-    });
+  /* ── DOM overlay lifecycle ───────────────────────────────────────── */
+  private teardown() {
+    this.overlay?.remove();
+    this.overlay = undefined;
   }
 
-  private buildOverlay() {
-    const div = document.createElement("div");
-    Object.assign(div.style, {
+  private mount(view: View) {
+    this.teardown();
+    const overlay = document.createElement("div");
+    Object.assign(overlay.style, {
       position: "fixed",
       inset: "0",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      gap: "22px",
-      zIndex: "30",
+      padding: "16px",
+      gap: "14px",
       color: "#fff",
       fontFamily: "monospace",
+      zIndex: "20",
       pointerEvents: "none",
-      padding: "20px",
-      boxSizing: "border-box",
     } as CSSStyleDeclaration);
 
+    /* Title — always visible at top */
     const title = document.createElement("div");
     title.textContent = "PIXEL REALMS";
     Object.assign(title.style, {
-      fontSize: "clamp(36px, 9vw, 64px)",
-      letterSpacing: "0.5em",
-      fontWeight: "900",
+      fontSize: "clamp(28px, 7vmin, 48px)",
+      letterSpacing: "clamp(4px, 1.5vmin, 10px)",
       color: "#fde047",
-      textShadow:
-        "0 0 22px rgba(252,165,165,0.4), 0 0 6px rgba(220,38,38,0.55), 0 4px 10px #000",
-      textAlign: "center",
-      paddingRight: "0.5em", // visual compensation for letter spacing
-    } as CSSStyleDeclaration);
-
-    const subtitle = document.createElement("div");
-    subtitle.textContent = "— A pixel-art multiplayer hack-and-slash —";
-    Object.assign(subtitle.style, {
-      fontSize: "clamp(11px, 2vw, 14px)",
-      letterSpacing: "0.2em",
-      color: "#a8a29e",
-      textShadow: "0 2px 4px #000",
-      textAlign: "center",
-    } as CSSStyleDeclaration);
-
-    const form = document.createElement("div");
-    Object.assign(form.style, {
-      marginTop: "16px",
-      display: "flex",
-      flexDirection: "column",
-      gap: "12px",
-      alignItems: "center",
-      pointerEvents: "auto",
-    } as CSSStyleDeclaration);
-
-    // Start blank — never preload a random "Hero###" or last-used name.
-    // Players want a clean form, especially when sharing devices.
-    const nameInput = document.createElement("input");
-    nameInput.value = "";
-    nameInput.maxLength = 16;
-    nameInput.placeholder = "계정 아이디";
-    nameInput.autocomplete = "username";
-    Object.assign(nameInput.style, {
-      padding: "12px 18px",
-      width: "min(280px, 80vw)",
-      background: "rgba(0,0,0,0.7)",
-      color: "#fde047",
-      border: "2px solid rgba(252,165,165,0.5)",
-      borderRadius: "6px",
-      fontFamily: "monospace",
-      fontSize: "16px",
-      textAlign: "center",
-      letterSpacing: "2px",
-      outline: "none",
-      boxShadow: "inset 0 0 12px rgba(127,29,29,0.45)",
-    } as CSSStyleDeclaration);
-
-    const passwordInput = document.createElement("input");
-    passwordInput.type = "password";
-    passwordInput.maxLength = 32;
-    passwordInput.placeholder = "비밀번호";
-    passwordInput.autocomplete = "current-password";
-    Object.assign(passwordInput.style, {
-      padding: "12px 18px",
-      width: "min(280px, 80vw)",
-      background: "rgba(0,0,0,0.7)",
-      color: "#fde047",
-      border: "2px solid rgba(252,165,165,0.5)",
-      borderRadius: "6px",
-      fontFamily: "monospace",
-      fontSize: "16px",
-      textAlign: "center",
-      letterSpacing: "2px",
-      outline: "none",
-      boxShadow: "inset 0 0 12px rgba(127,29,29,0.45)",
-    } as CSSStyleDeclaration);
-
-    const styleBtn = (
-      btn: HTMLButtonElement,
-      variant: "primary" | "ghost" = "primary"
-    ) => {
-      Object.assign(btn.style, {
-        padding: "11px 22px",
-        fontSize: "clamp(13px, 2.6vw, 16px)",
-        fontFamily: "monospace",
-        fontWeight: "bold",
-        letterSpacing: "0.18em",
-        color: variant === "primary" ? "#fff7d6" : "#fde047",
-        background:
-          variant === "primary"
-            ? "linear-gradient(180deg, rgba(127,29,29,0.92), rgba(60,10,10,0.97))"
-            : "rgba(0,0,0,0.6)",
-        border:
-          variant === "primary"
-            ? "3px solid rgba(248,113,113,0.95)"
-            : "2px solid rgba(252,165,165,0.45)",
-        borderRadius: "8px",
-        cursor: "pointer",
-        boxShadow:
-          variant === "primary"
-            ? "0 4px 16px rgba(0,0,0,0.55), inset 0 -3px 6px rgba(0,0,0,0.4)"
-            : "0 2px 6px rgba(0,0,0,0.4)",
-        transition: "transform 0.08s ease",
-        touchAction: "manipulation",
-        width: "min(280px, 80vw)",
-      } as CSSStyleDeclaration);
-      btn.addEventListener("pointerdown", () => {
-        btn.style.transform = "scale(0.96)";
-      });
-      btn.addEventListener("pointerup", () => {
-        btn.style.transform = "scale(1)";
-      });
-      btn.addEventListener("pointerleave", () => {
-        btn.style.transform = "scale(1)";
-      });
-    };
-
-    const soloBtn = document.createElement("button");
-    soloBtn.type = "button";
-    soloBtn.textContent = "▶  시작";
-    styleBtn(soloBtn, "primary");
-    // Give the main CTA more visual weight than the rest
-    Object.assign(soloBtn.style, {
-      padding: "16px 22px",
-      fontSize: "clamp(15px, 3.4vw, 19px)",
-      letterSpacing: "0.3em",
-    } as CSSStyleDeclaration);
-
-    const createBtn = document.createElement("button");
-    createBtn.type = "button";
-    createBtn.textContent = "✨  새 방 만들기";
-    styleBtn(createBtn, "ghost");
-
-    /* Join row: input + button */
-    const joinRow = document.createElement("div");
-    Object.assign(joinRow.style, {
-      display: "flex",
-      gap: "6px",
-      width: "min(280px, 80vw)",
-    } as CSSStyleDeclaration);
-
-    const roomInput = document.createElement("input");
-    roomInput.placeholder = "방 코드";
-    roomInput.maxLength = 12;
-    Object.assign(roomInput.style, {
-      flex: "1",
-      padding: "10px 12px",
-      background: "rgba(0,0,0,0.7)",
-      color: "#fff",
-      border: "2px solid rgba(96,165,250,0.45)",
-      borderRadius: "6px",
-      fontFamily: "monospace",
-      fontSize: "14px",
-      textAlign: "center",
-      letterSpacing: "2px",
-      outline: "none",
-      textTransform: "uppercase",
-    } as CSSStyleDeclaration);
-
-    const joinBtn = document.createElement("button");
-    joinBtn.type = "button";
-    joinBtn.textContent = "입장";
-    Object.assign(joinBtn.style, {
-      padding: "10px 18px",
-      background: "linear-gradient(180deg, rgba(30,58,138,0.92), rgba(8,20,60,0.95))",
-      color: "#fff",
-      border: "2px solid rgba(96,165,250,0.75)",
-      borderRadius: "6px",
-      fontFamily: "monospace",
+      textShadow: "0 0 18px rgba(252,165,165,0.5), 0 4px 8px #000",
       fontWeight: "bold",
-      fontSize: "14px",
-      letterSpacing: "0.15em",
-      cursor: "pointer",
-      touchAction: "manipulation",
+      marginBottom: "8px",
     } as CSSStyleDeclaration);
+    overlay.append(title);
 
-    joinRow.appendChild(roomInput);
-    joinRow.appendChild(joinBtn);
+    if (view === "title") this.renderTitle(overlay);
+    else if (view === "login") this.renderForm(overlay, "login");
+    else if (view === "register") this.renderForm(overlay, "register");
+
+    document.body.append(overlay);
+    this.overlay = overlay;
+  }
+
+  /* ── Title view: two big buttons + optional OAuth row ────────────── */
+  private renderTitle(root: HTMLDivElement) {
+    const subtitle = document.createElement("div");
+    subtitle.textContent = "2D 픽셀 멀티 RPG";
+    Object.assign(subtitle.style, {
+      fontSize: "12px",
+      color: "#9ca3af",
+      letterSpacing: "3px",
+      marginBottom: "6px",
+    } as CSSStyleDeclaration);
+    root.append(subtitle);
+
+    /* If already signed in via OAuth, jump straight to "Play as ..." */
+    if (this.oauthToken && this.oauthDisplayName) {
+      const card = document.createElement("div");
+      Object.assign(card.style, {
+        ...this.cardStyle(),
+        textAlign: "center",
+      } as Partial<CSSStyleDeclaration>);
+      const hi = document.createElement("div");
+      hi.textContent = `로그인됨: ${this.oauthDisplayName}`;
+      Object.assign(hi.style, {
+        color: "#fde047",
+        fontSize: "13px",
+        marginBottom: "10px",
+      } as CSSStyleDeclaration);
+      const playBtn = this.bigButton("⚔  플레이");
+      playBtn.onclick = () =>
+        this.scene.start("world", {
+          mode: "quick",
+          token: this.oauthToken!,
+        });
+      const out = this.smallButton("로그아웃");
+      out.style.marginTop = "10px";
+      out.onclick = async () => {
+        await signOut();
+        this.oauthToken = null;
+        this.oauthDisplayName = null;
+        this.mount("title");
+      };
+      card.append(hi, playBtn, out);
+      root.append(card);
+      return;
+    }
+
+    const card = document.createElement("div");
+    Object.assign(card.style, this.cardStyle() as Partial<CSSStyleDeclaration>);
+
+    const loginBtn = this.bigButton("🗝  로그인");
+    loginBtn.onclick = () => this.mount("login");
+    const signupBtn = this.bigButton("✨  회원가입");
+    signupBtn.style.background =
+      "linear-gradient(180deg, rgba(7,89,133,0.95), rgba(2,40,60,0.98))";
+    signupBtn.style.borderColor = "rgba(125,211,252,0.95)";
+    signupBtn.onclick = () => this.mount("register");
+    card.append(loginBtn, signupBtn);
+
+    if (oauthEnabled) {
+      const sep = document.createElement("div");
+      sep.textContent = "또는";
+      Object.assign(sep.style, {
+        fontSize: "11px",
+        color: "#6b7280",
+        textAlign: "center",
+        margin: "14px 0 6px",
+      } as CSSStyleDeclaration);
+      card.append(sep);
+      const row = document.createElement("div");
+      Object.assign(row.style, {
+        display: "flex",
+        gap: "8px",
+        justifyContent: "center",
+      } as CSSStyleDeclaration);
+      (["google", "github", "discord"] as OAuthProvider[]).forEach(
+        (provider) => {
+          const b = this.oauthButton(provider);
+          row.append(b);
+        }
+      );
+      card.append(row);
+    }
+
+    root.append(card);
+
+    const tip = document.createElement("div");
+    tip.textContent = "처음이면 회원가입 → 캐릭터를 만드세요";
+    Object.assign(tip.style, {
+      fontSize: "11px",
+      color: "#9ca3af",
+      marginTop: "10px",
+      textAlign: "center",
+      maxWidth: "320px",
+    } as CSSStyleDeclaration);
+    root.append(tip);
+  }
+
+  /* ── Form view: login OR register ────────────────────────────────── */
+  private renderForm(root: HTMLDivElement, mode: "login" | "register") {
+    const card = document.createElement("div");
+    Object.assign(card.style, this.cardStyle() as Partial<CSSStyleDeclaration>);
+
+    const heading = document.createElement("div");
+    heading.textContent = mode === "login" ? "로그인" : "회원가입";
+    Object.assign(heading.style, {
+      fontSize: "18px",
+      fontWeight: "bold",
+      letterSpacing: "4px",
+      color: "#fde047",
+      textAlign: "center",
+      marginBottom: "10px",
+    } as CSSStyleDeclaration);
+    card.append(heading);
+
+    const idIn = document.createElement("input");
+    idIn.placeholder = "계정 아이디 (영문/숫자 2~16자)";
+    idIn.maxLength = 16;
+    idIn.autocomplete = "username";
+    Object.assign(idIn.style, this.inputStyle() as Partial<CSSStyleDeclaration>);
+
+    const pwIn = document.createElement("input");
+    pwIn.placeholder = "비밀번호";
+    pwIn.type = "password";
+    pwIn.autocomplete = mode === "login" ? "current-password" : "new-password";
+    Object.assign(pwIn.style, this.inputStyle() as Partial<CSSStyleDeclaration>);
 
     const status = document.createElement("div");
     Object.assign(status.style, {
-      minHeight: "14px",
-      fontSize: "11px",
+      minHeight: "16px",
+      fontSize: "12px",
       color: "#fca5a5",
       textAlign: "center",
-      letterSpacing: "1px",
     } as CSSStyleDeclaration);
 
-    const launch = (mode: "solo" | "create" | "join", roomId?: string) => {
-      // ── OAuth path ────────────────────────────────────────────────
-      if (this.oauthToken) {
-        if (mode === "join" && (!roomId || roomId.length < 3)) {
-          status.style.color = "#fca5a5";
-          status.textContent = "방 코드를 입력하세요";
-          return;
-        }
-        soloBtn.disabled = true;
-        createBtn.disabled = true;
-        joinBtn.disabled = true;
-        status.style.color = "#a8a29e";
-        status.textContent = "입장 중…";
-        this.scene.start("world", {
-          mode,
-          roomId,
-          token: this.oauthToken,
-        });
-        return;
-      }
-      // ── Username/password path ────────────────────────────────────
-      const finalName = nameInput.value.trim().slice(0, 16);
-      const finalPw = passwordInput.value;
-      if (!finalName) {
-        status.style.color = "#fca5a5";
+    const submitBtn = this.bigButton(
+      mode === "login" ? "🗝  로그인" : "✨  계정 만들기"
+    );
+    if (mode === "register") {
+      submitBtn.style.background =
+        "linear-gradient(180deg, rgba(7,89,133,0.95), rgba(2,40,60,0.98))";
+      submitBtn.style.borderColor = "rgba(125,211,252,0.95)";
+    }
+
+    const back = this.smallButton("← 메뉴로");
+    back.style.marginTop = "8px";
+    back.onclick = () => this.mount("title");
+
+    const submit = () => {
+      status.style.color = "#fca5a5";
+      const name = idIn.value.trim();
+      const pw = pwIn.value;
+      if (!name) {
         status.textContent = "계정 아이디를 입력하세요";
         return;
       }
-      if (!/^[a-zA-Z0-9_-]{2,16}$/.test(finalName)) {
-        status.style.color = "#fca5a5";
-        status.textContent = "아이디: 영문/숫자 2~16자만 (한글 X)";
+      if (!/^[a-zA-Z0-9_-]{2,16}$/.test(name)) {
+        status.textContent = "아이디: 영문/숫자/_- 2~16자만 (한글 X)";
         return;
       }
-      if (!finalPw) {
-        status.style.color = "#fca5a5";
+      if (!pw) {
         status.textContent = "비밀번호를 입력하세요";
         return;
       }
-      if (mode === "join" && (!roomId || roomId.length < 3)) {
-        status.style.color = "#fca5a5";
-        status.textContent = "방 코드를 입력하세요";
-        return;
-      }
-      // Lock buttons during transition
-      soloBtn.disabled = true;
-      createBtn.disabled = true;
-      joinBtn.disabled = true;
+      submitBtn.disabled = true;
+      back.disabled = true;
+      idIn.disabled = true;
+      pwIn.disabled = true;
       status.style.color = "#a8a29e";
       status.textContent =
-        (mode === "solo"
-          ? "입장 중…"
-          : mode === "create"
-            ? "방 만드는 중…"
-            : `${roomId?.toUpperCase()} 방 입장 중…`) +
+        (mode === "login" ? "로그인 중…" : "계정 만드는 중…") +
         " (서버가 자고 있으면 최대 30초 걸려요)";
       this.scene.start("world", {
-        mode,
-        roomId,
-        username: finalName,
-        password: finalPw,
-        authMode,
+        mode: "quick",
+        username: name,
+        password: pw,
+        authMode: mode === "login" ? "login" : "register",
       });
     };
-
-    soloBtn.addEventListener("click", () => launch("solo"));
-    createBtn.addEventListener("click", () => launch("create"));
-    joinBtn.addEventListener("click", () =>
-      launch("join", roomInput.value.trim().toUpperCase())
+    submitBtn.onclick = submit;
+    [idIn, pwIn].forEach((el) =>
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submit();
+      })
     );
-    nameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") passwordInput.focus();
-    });
-    passwordInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") launch("solo");
-    });
-    roomInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") launch("join", roomInput.value.trim().toUpperCase());
-    });
 
-    const help = document.createElement("div");
-    help.innerHTML =
-      "<b style='color:#fde047'>PC</b> &nbsp;Move: <b>WASD</b> · Attack: <b>Left-click</b> / Space<br>" +
-      "Fire Bolt: <b>Right-click</b> / 2 · Frost Nova: <b>Shift+RC</b> / 3<br>" +
-      "Teleport: <b>T</b> · Meteor: <b>M</b> (aim with cursor)<br>" +
-      "Potion: <b>1</b> / Q · Character: <b>C</b> · Inventory: <b>I</b> · Quests: <b>J</b> · Skills: <b>K</b><br>" +
-      "<b style='color:#fde047'>Mobile</b> &nbsp;Joystick + on-screen ⚔ 🔥 ❄ 🧪";
-    Object.assign(help.style, {
-      fontSize: "11px",
-      lineHeight: "1.7",
-      color: "#9ca3af",
-      textAlign: "center",
-      marginTop: "6px",
-      background: "rgba(0,0,0,0.45)",
-      padding: "10px 18px",
-      borderRadius: "6px",
-      border: "1px solid rgba(255,255,255,0.08)",
-      letterSpacing: "1px",
-    } as CSSStyleDeclaration);
+    card.append(idIn, pwIn, submitBtn, status, back);
+    root.append(card);
+    setTimeout(() => idIn.focus(), 50);
+  }
 
-    /* ── OAuth row (Google / GitHub / Discord) ────────────────────── */
-    const oauthRow = document.createElement("div");
-    Object.assign(oauthRow.style, {
-      display: oauthEnabled ? "flex" : "none",
+  /* ── Style helpers ───────────────────────────────────────────────── */
+
+  private cardStyle(): Partial<CSSStyleDeclaration> {
+    return {
+      width: "min(340px, 90vw)",
+      padding: "18px 18px 14px",
+      borderRadius: "12px",
+      background: "linear-gradient(180deg, #1c1018, #0b070d)",
+      border: "2px solid rgba(127,29,29,0.75)",
+      boxShadow:
+        "0 18px 50px rgba(0,0,0,0.7), inset 0 0 28px rgba(220,38,38,0.18)",
+      display: "flex",
+      flexDirection: "column",
       gap: "10px",
-      width: "min(280px, 80vw)",
-      justifyContent: "space-between",
-    } as CSSStyleDeclaration);
-
-    const makeOauthBtn = (
-      provider: OAuthProvider,
-      label: string,
-      bg: string
-    ) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      b.title = `Sign in with ${provider}`;
-      Object.assign(b.style, {
-        flex: "1",
-        padding: "10px 0",
-        fontFamily: "monospace",
-        fontSize: "18px",
-        background: bg,
-        color: "#fff",
-        border: "2px solid rgba(255,255,255,0.15)",
-        borderRadius: "6px",
-        cursor: "pointer",
-        touchAction: "manipulation",
-      } as CSSStyleDeclaration);
-      b.addEventListener("click", async () => {
-        status.style.color = "#a8a29e";
-        status.textContent = `Redirecting to ${provider}…`;
-        try {
-          await signInWithProvider(provider);
-        } catch (e) {
-          status.style.color = "#fca5a5";
-          status.textContent = `OAuth failed: ${(e as Error).message}`;
-        }
-      });
-      return b;
+      pointerEvents: "auto",
     };
+  }
 
-    oauthRow.appendChild(makeOauthBtn("google", "G", "#ea4335"));
-    oauthRow.appendChild(makeOauthBtn("github", "▮", "#24292e"));
-    oauthRow.appendChild(makeOauthBtn("discord", "✦", "#5865f2"));
-
-    const oauthLabel = document.createElement("div");
-    oauthLabel.textContent = oauthEnabled
-      ? "— Sign in with —"
-      : "";
-    Object.assign(oauthLabel.style, {
-      display: oauthEnabled ? "block" : "none",
-      fontSize: "10px",
-      color: "#9ca3af",
-      letterSpacing: "0.2em",
-      marginBottom: "-6px",
-    } as CSSStyleDeclaration);
-
-    const separator = document.createElement("div");
-    separator.textContent = oauthEnabled ? "— or use a username —" : "";
-    Object.assign(separator.style, {
-      display: oauthEnabled ? "block" : "none",
-      fontSize: "10px",
-      color: "#9ca3af",
-      letterSpacing: "0.2em",
-      marginTop: "-2px",
-    } as CSSStyleDeclaration);
-
-    /* ── Signed-in indicator (replaces username/password when OAuth'd) ── */
-    const signedInBanner = document.createElement("div");
-    Object.assign(signedInBanner.style, {
-      display: "none",
-      width: "min(280px, 80vw)",
-      padding: "10px 14px",
+  private inputStyle(): Partial<CSSStyleDeclaration> {
+    return {
+      padding: "11px 14px",
+      background: "rgba(0,0,0,0.7)",
+      color: "#fde047",
+      border: "2px solid rgba(252,165,165,0.45)",
       borderRadius: "6px",
-      border: "1px solid rgba(132,225,180,0.55)",
-      background: "rgba(20,40,30,0.85)",
-      color: "#a7f3d0",
-      fontSize: "12px",
+      fontFamily: "monospace",
+      fontSize: "14px",
+      letterSpacing: "2px",
       textAlign: "center",
-      letterSpacing: "1px",
-    } as CSSStyleDeclaration);
-    const signOutBtn = document.createElement("button");
-    signOutBtn.type = "button";
-    signOutBtn.textContent = "Sign out";
-    Object.assign(signOutBtn.style, {
-      marginLeft: "8px",
-      padding: "2px 8px",
-      fontSize: "10px",
-      background: "transparent",
-      color: "#fca5a5",
-      border: "1px solid rgba(252,165,165,0.5)",
-      borderRadius: "4px",
+      outline: "none",
+      pointerEvents: "auto",
+      width: "100%",
+      boxSizing: "border-box",
+    };
+  }
+
+  private bigButton(label: string): HTMLButtonElement {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    Object.assign(b.style, {
+      pointerEvents: "auto",
+      padding: "14px 18px",
+      fontSize: "16px",
+      fontFamily: "monospace",
+      fontWeight: "bold",
+      letterSpacing: "4px",
+      color: "#fff7d6",
+      background:
+        "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(60,10,10,0.98))",
+      border: "3px solid rgba(248,113,113,0.95)",
+      borderRadius: "8px",
       cursor: "pointer",
+      boxShadow:
+        "0 4px 14px rgba(0,0,0,0.5), inset 0 -3px 6px rgba(0,0,0,0.4)",
+      transition: "transform 0.06s",
     } as CSSStyleDeclaration);
-    signOutBtn.addEventListener("click", async () => {
-      await signOut();
-      window.location.reload();
-    });
+    b.addEventListener("mousedown", () => (b.style.transform = "scale(0.98)"));
+    b.addEventListener("mouseup", () => (b.style.transform = "scale(1)"));
+    b.addEventListener("mouseleave", () => (b.style.transform = "scale(1)"));
+    return b;
+  }
 
-    /* ── Check for existing session (returning from OAuth or persisted) ── */
-    (async () => {
-      cleanOAuthHash();
-      const session = await getSession();
-      if (session) {
-        this.oauthToken = session.access_token;
-        const u = session.user;
-        this.oauthDisplayName =
-          (u.user_metadata?.full_name as string | undefined) ??
-          (u.user_metadata?.name as string | undefined) ??
-          (u.email as string | undefined) ??
-          "Adventurer";
-        // Hide username/password, show signed-in state
-        nameInput.style.display = "none";
-        passwordInput.style.display = "none";
-        oauthRow.style.display = "none";
-        oauthLabel.style.display = "none";
-        separator.style.display = "none";
-        signedInBanner.innerHTML = `Signed in as <b>${this.oauthDisplayName}</b>`;
-        signedInBanner.appendChild(signOutBtn);
-        signedInBanner.style.display = "block";
-      }
-    })();
-
-    form.appendChild(oauthLabel);
-    form.appendChild(oauthRow);
-    form.appendChild(separator);
-    form.appendChild(signedInBanner);
-    // No login/register tabs — server uses "auto" mode (login if name exists,
-    // else create a new account). One unified flow, no decision burden.
-    const authMode: "auto" = "auto";
-
-    // ── Hint line ─────────────────────────────────────────────────
-    const hint = document.createElement("div");
-    hint.textContent =
-      "계정 아이디 + 비밀번호로 로그인합니다. 캐릭터 이름은 게임에 들어간 뒤 따로 정합니다.";
-    Object.assign(hint.style, {
-      fontSize: "11px",
-      color: "#9ca3af",
-      maxWidth: "min(280px, 80vw)",
-      textAlign: "center",
-      lineHeight: "1.45",
-      margin: "-4px 0 -2px 0",
-    } as CSSStyleDeclaration);
-
-    // ── Collapsible friend-mode section ───────────────────────────
-    const friendToggle = document.createElement("button");
-    friendToggle.type = "button";
-    friendToggle.textContent = "▸ 친구랑 플레이";
-    Object.assign(friendToggle.style, {
-      background: "transparent",
-      border: "none",
-      color: "#94a3b8",
+  private smallButton(label: string): HTMLButtonElement {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    Object.assign(b.style, {
+      pointerEvents: "auto",
+      padding: "8px 12px",
       fontSize: "12px",
       fontFamily: "monospace",
+      color: "#a8a29e",
+      background: "rgba(0,0,0,0.5)",
+      border: "1px solid rgba(168,162,158,0.4)",
+      borderRadius: "6px",
       cursor: "pointer",
-      padding: "4px 8px",
-      letterSpacing: "1px",
-      touchAction: "manipulation",
+      letterSpacing: "2px",
     } as CSSStyleDeclaration);
+    return b;
+  }
 
-    const friendBox = document.createElement("div");
-    Object.assign(friendBox.style, {
-      display: "none",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: "10px",
-      width: "min(280px, 80vw)",
-      padding: "10px",
-      border: "1px dashed rgba(252,165,165,0.35)",
-      borderRadius: "8px",
-      background: "rgba(0,0,0,0.35)",
+  private oauthButton(provider: OAuthProvider): HTMLButtonElement {
+    const b = document.createElement("button");
+    b.type = "button";
+    const label: Record<OAuthProvider, string> = {
+      google: "Google",
+      github: "GitHub",
+      discord: "Discord",
+    };
+    const colorFg: Record<OAuthProvider, string> = {
+      google: "#fbbf24",
+      github: "#e5e7eb",
+      discord: "#a5b4fc",
+    };
+    b.textContent = label[provider];
+    Object.assign(b.style, {
+      pointerEvents: "auto",
+      flex: "1",
+      padding: "10px 8px",
+      fontSize: "12px",
+      fontFamily: "monospace",
+      letterSpacing: "2px",
+      color: colorFg[provider],
+      background: "rgba(0,0,0,0.6)",
+      border: "1px solid rgba(255,255,255,0.18)",
+      borderRadius: "6px",
+      cursor: "pointer",
     } as CSSStyleDeclaration);
-    const friendLabel = document.createElement("div");
-    friendLabel.textContent = "여러 명이 같이 놀고 싶다면";
-    Object.assign(friendLabel.style, {
-      fontSize: "10px",
-      color: "#94a3b8",
-      letterSpacing: "1px",
-    } as CSSStyleDeclaration);
-    friendBox.append(friendLabel, createBtn, joinRow);
-
-    friendToggle.addEventListener("click", () => {
-      const open = friendBox.style.display !== "none";
-      friendBox.style.display = open ? "none" : "flex";
-      friendToggle.textContent = open ? "▸ 친구랑 플레이" : "▾ 친구랑 플레이";
-    });
-
-    form.appendChild(nameInput);
-    form.appendChild(passwordInput);
-    form.appendChild(soloBtn);
-    form.appendChild(hint);
-    form.appendChild(friendToggle);
-    form.appendChild(friendBox);
-    form.appendChild(status);
-
-    div.appendChild(title);
-    div.appendChild(subtitle);
-    div.appendChild(form);
-    div.appendChild(help);
-    document.body.appendChild(div);
-    this.overlay = div;
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = "…";
+      try {
+        await signInWithProvider(provider);
+      } catch (e) {
+        b.disabled = false;
+        b.textContent = label[provider];
+        alert(`${label[provider]} 로그인 실패: ${(e as Error).message}`);
+      }
+    };
+    return b;
   }
 }
