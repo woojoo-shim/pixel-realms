@@ -48,8 +48,16 @@ export class MenuScene extends Phaser.Scene {
       const httpUrl = wsUrl
         .replace(/^wss:/, "https:")
         .replace(/^ws:/, "http:");
-      void fetch(`${httpUrl}/health`, { mode: "cors" }).catch(() => {});
+      // Ping immediately, then again at 5s and 15s — covers slow mobile
+      // networks where the first request may itself time out.
+      const ping = () =>
+        void fetch(`${httpUrl}/health`, { mode: "cors" }).catch(() => {});
+      ping();
+      setTimeout(ping, 5000);
+      setTimeout(ping, 15000);
     }
+
+    // (Landscape-rotate overlay is installed globally from index.html.)
 
     /* ── Backdrop ─────────────────────────────────────────────────── */
     this.drawBackdrop();

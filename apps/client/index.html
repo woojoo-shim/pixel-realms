@@ -133,6 +133,49 @@
       }
       .pr-panel::before { top: -10px; left: 50%; margin-left: -8px; }
       .pr-panel::after  { bottom: -10px; left: 50%; margin-left: -8px; }
+
+      /* ── Rotate-to-landscape overlay (phones only) ────────────── */
+      #pr-rotate {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.95);
+        color: #fde047;
+        font-family: var(--pr-display);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        z-index: 9999;
+        text-align: center;
+        padding: 20px;
+      }
+      #pr-rotate .pr-rotate-icon {
+        font-size: 84px;
+        animation: pr-rotate-spin 2.5s ease-in-out infinite;
+        transform-origin: center;
+      }
+      #pr-rotate .pr-rotate-title {
+        font-size: 24px;
+        letter-spacing: 8px;
+        font-weight: 700;
+      }
+      #pr-rotate .pr-rotate-sub {
+        font-family: var(--pr-story);
+        font-size: 13px;
+        color: #cbd5e1;
+        letter-spacing: 3px;
+      }
+      @keyframes pr-rotate-spin {
+        0%, 35% { transform: rotate(0deg); }
+        50%, 85% { transform: rotate(-90deg); }
+        100% { transform: rotate(-90deg); }
+      }
+      /* Phone + portrait only — desktops and tablets in any orientation
+         and phones in landscape keep playing normally. */
+      @media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+        #pr-rotate { display: flex; }
+      }
     </style>
     <style>
       html, body {
@@ -187,6 +230,12 @@
   <body>
     <div id="hud">connecting…</div>
     <div id="game"></div>
+    <!-- Phone-only rotate prompt; CSS handles visibility via media query -->
+    <div id="pr-rotate">
+      <div class="pr-rotate-icon">📱</div>
+      <div class="pr-rotate-title">가로로 돌려주세요</div>
+      <div class="pr-rotate-sub">Rotate your phone to landscape</div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

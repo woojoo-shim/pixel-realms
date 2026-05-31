@@ -41,9 +41,8 @@ export async function joinWorld(opts: JoinOptions): Promise<JoinResult> {
   }
 
   // Render free tier sleeps after 15min idle; the first connect after a
-  // cold start can fail with a timeout while the container boots. Retry
-  // once after a short delay so transient cold-start errors don't surface
-  // as "CONNECTION FAILED" to the user.
+  // cold start can take 30-60s on slow mobile networks. Retry several
+  // times with increasing backoff so we span the full boot window.
   const attempt = async (): Promise<Room> => {
     switch (opts.mode) {
       case "solo":
@@ -59,18 +58,17 @@ export async function joinWorld(opts: JoinOptions): Promise<JoinResult> {
     }
   };
 
-  let room: Room;
-  try {
-    room = await attempt();
-  } catch (firstErr) {
-    // Some Colyseus / network errors don't have a `.code`; treat any
-    // failure as "maybe cold start" and try once more after 4s.
-    await new Promise((r) => setTimeout(r, 4000));
+  // Up to 4 attempts: 0s, 4s, 9s, 15s — total ~28s budget.
+  const delays = [0, 4000, 5000, 6000];
+  let firstErr: unknown = null;
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
     try {
-      room = await attempt();
-    } catch (_secondErr) {
-      throw firstErr;
+      const room = await attempt();
+      return { client, room };
+    } catch (err) {
+      if (!firstErr) firstErr = err;
     }
   }
-  return { client, room };
+  throw firstErr;
 }
