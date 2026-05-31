@@ -2697,7 +2697,14 @@ export class WorldScene extends Phaser.Scene {
     const me = state?.players?.get?.(this.mySessionId);
     if (!me) return;
     this.characterPanel.setView({
+      name: me.name ?? "영웅",
+      classId: me.classId ?? "warrior",
       level: me.level,
+      exp: me.exp,
+      expNext: expToNextLevel(me.level),
+      hp: me.hp,
+      mp: me.mp,
+      gold: me.gold,
       statPoints: me.statPoints,
       vit: me.statVit,
       mnd: me.statMnd,
