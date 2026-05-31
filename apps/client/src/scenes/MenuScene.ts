@@ -152,11 +152,10 @@ export class MenuScene extends Phaser.Scene {
       pointerEvents: "auto",
     } as CSSStyleDeclaration);
 
-    const savedName =
-      localStorage.getItem("pr:name") ?? `Hero${Math.floor(Math.random() * 1000)}`;
-
+    // Start blank — never preload a random "Hero###" or last-used name.
+    // Players want a clean form, especially when sharing devices.
     const nameInput = document.createElement("input");
-    nameInput.value = savedName;
+    nameInput.value = "";
     nameInput.maxLength = 16;
     nameInput.placeholder = "계정 아이디";
     nameInput.autocomplete = "username";
@@ -327,10 +326,13 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
       // ── Username/password path ────────────────────────────────────
-      const finalName = (
-        nameInput.value.trim() || `Hero${Math.floor(Math.random() * 1000)}`
-      ).slice(0, 16);
+      const finalName = nameInput.value.trim().slice(0, 16);
       const finalPw = passwordInput.value;
+      if (!finalName) {
+        status.style.color = "#fca5a5";
+        status.textContent = "계정 아이디를 입력하세요";
+        return;
+      }
       if (!/^[a-zA-Z0-9_-]{2,16}$/.test(finalName)) {
         status.style.color = "#fca5a5";
         status.textContent = "아이디: 영문/숫자 2~16자만 (한글 X)";
@@ -341,7 +343,6 @@ export class MenuScene extends Phaser.Scene {
         status.textContent = "비밀번호를 입력하세요";
         return;
       }
-      localStorage.setItem("pr:name", finalName);
       if (mode === "join" && (!roomId || roomId.length < 3)) {
         status.style.color = "#fca5a5";
         status.textContent = "방 코드를 입력하세요";
