@@ -1952,30 +1952,99 @@ export class WorldScene extends Phaser.Scene {
 
   /** Visual arc in front of the attacking player. */
   private playSwingFx(remote: RemoteSprite, dir: string) {
-    const g = this.add.graphics();
     let ang = 0;
+    let dx = 0, dy = 0;
     switch (dir) {
-      case "right": ang = 0; break;
-      case "down":  ang = Math.PI / 2; break;
-      case "left":  ang = Math.PI; break;
-      case "up":    ang = -Math.PI / 2; break;
+      case "right": ang = 0; dx = 1; break;
+      case "down":  ang = Math.PI / 2; dy = 1; break;
+      case "left":  ang = Math.PI; dx = -1; break;
+      case "up":    ang = -Math.PI / 2; dy = -1; break;
     }
-    const span = Math.PI / 2.2;
     const r = COMBAT.ATTACK_RANGE;
-    g.fillStyle(0xfff7d6, 0.6);
-    g.lineStyle(2, 0xfffac9, 0.95);
-    g.beginPath();
-    g.moveTo(remote.sprite.x, remote.sprite.y - 12);
-    g.arc(remote.sprite.x, remote.sprite.y - 12, r, ang - span / 2, ang + span / 2, false);
-    g.closePath();
-    g.fillPath();
-    g.strokePath();
-    g.setDepth(remote.sprite.y + 1);
+    const span = Math.PI / 1.7; // wider, more dramatic arc
+    const dur = COMBAT.ATTACK_SWING_MS;
+    const cx = remote.sprite.x;
+    const cy0 = remote.sprite.y;
+    const cy = cy0 - 12;
+
+    // 1) Sprite squash: punch toward target then snap back.
+    //    We use position tween + scale tween in parallel.
+    const origScaleX = remote.sprite.scaleX;
+    const origScaleY = remote.sprite.scaleY;
+    const origX = remote.sprite.x;
+    const origY = remote.sprite.y;
     this.tweens.add({
-      targets: g,
-      alpha: 0,
-      duration: COMBAT.ATTACK_SWING_MS,
+      targets: remote.sprite,
+      x: origX + dx * 4,
+      y: origY + dy * 4,
+      scaleX: origScaleX * 1.18,
+      scaleY: origScaleY * 0.88,
+      duration: dur * 0.28,
+      ease: "Cubic.easeOut",
+      yoyo: true,
+      onComplete: () => {
+        remote.sprite.x = origX;
+        remote.sprite.y = origY;
+        remote.sprite.setScale(origScaleX, origScaleY);
+      },
+    });
+
+    // 2) Sweeping crescent — the arc itself moves through its span over
+    //    the swing duration. We redraw each frame using a tween proxy.
+    const g = this.add.graphics().setDepth(cy0 + 1);
+    const sweepWidth = span * 0.55; // bright leading-edge slice width
+    const phase = { t: -1 }; // -1 (start) → +1 (end of sweep)
+    this.tweens.add({
+      targets: phase,
+      t: 1,
+      duration: dur,
+      ease: "Cubic.easeOut",
+      onUpdate: () => {
+        const head = ang + (phase.t * span) / 2;
+        const tail = head - sweepWidth;
+        const alpha = Math.max(0, 1 - Math.abs(phase.t)); // peaks mid-swing
+        g.clear();
+        // Outer faint trail (full span the swing has covered)
+        g.fillStyle(0xfff3c4, 0.25 * alpha);
+        g.beginPath();
+        g.moveTo(cx, cy);
+        g.arc(cx, cy, r, ang - span / 2, head, false);
+        g.closePath();
+        g.fillPath();
+        // Leading-edge bright crescent
+        g.fillStyle(0xfffac9, 0.85 * alpha);
+        g.beginPath();
+        g.moveTo(cx, cy);
+        g.arc(cx, cy, r, tail, head, false);
+        g.closePath();
+        g.fillPath();
+        // Hot rim line at the very leading edge
+        g.lineStyle(2.5, 0xffffff, 0.95 * alpha);
+        g.beginPath();
+        g.arc(cx, cy, r, head - 0.05, head + 0.05, false);
+        g.strokePath();
+        // Tip sparkle following the blade
+        const tipX = cx + Math.cos(head) * r;
+        const tipY = cy + Math.sin(head) * r;
+        g.fillStyle(0xffffff, alpha);
+        g.fillCircle(tipX, tipY, 2.5);
+        g.fillStyle(0xfff7d6, 0.6 * alpha);
+        g.fillCircle(tipX, tipY, 5);
+      },
       onComplete: () => g.destroy(),
+    });
+
+    // 3) Quick anticipation flash at the player's chest
+    const flash = this.add.graphics().setDepth(cy0 + 1);
+    flash.fillStyle(0xffffff, 0.85);
+    flash.fillCircle(cx, cy, 6);
+    flash.fillStyle(0xfff7d6, 0.5);
+    flash.fillCircle(cx, cy, 12);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: dur * 0.5,
+      onComplete: () => flash.destroy(),
     });
   }
 
