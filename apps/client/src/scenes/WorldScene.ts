@@ -223,6 +223,16 @@ export class WorldScene extends Phaser.Scene {
   private maps: Record<MapId, MapData> | null = null;
   private currentMap: MapId | null = null;
   private mapContainer?: Phaser.GameObjects.Container;
+
+  // ── Ambient atmosphere ─────────────────────────────────────────
+  /** Per-biome theme deciding colour/motion of drifting particles. */
+  private ambientTheme: MapId | null = null;
+  /** Accumulated time since last ambient particle (sec). */
+  private ambientAcc = 0;
+  /** Glow halos around warm buildings (inn/shop/fountain) — flicker each frame. */
+  private buildingGlows: Phaser.GameObjects.Graphics[] = [];
+  /** Time accumulator for sprite walk-bob (sec). */
+  private bobClock = 0;
   private mapTransitionUntil = 0;
 
   // Set by MenuScene via scene.start("world", data)
@@ -1230,13 +1240,37 @@ export class WorldScene extends Phaser.Scene {
     g.setDepth(-1000);
     this.mapContainer.add(g);
 
+    // Drop stale glows — new mapContainer is fresh, but the glows live
+    // separately so they can sit *above* tiles but *below* sprites.
+    for (const gl of this.buildingGlows) gl.destroy();
+    this.buildingGlows = [];
+
     for (const d of map.decorations) {
       const key = `deco-${d.type}`;
       const img = this.add.image(d.x, d.y, key);
       img.setOrigin(0.5, 1);
       img.setDepth(d.y);
       this.mapContainer.add(img);
+
+      // Add a soft, flickering warm halo around lit buildings + fountain.
+      // The glow base radius/colour depends on the decoration type.
+      const glow = this.buildingGlowFor(d.type);
+      if (glow) {
+        const halo = this.add.graphics().setDepth(d.y - 1);
+        halo.setBlendMode(Phaser.BlendModes.ADD);
+        (halo as any)._cx = d.x;
+        (halo as any)._cy = d.y - glow.cy;
+        (halo as any)._r = glow.r;
+        (halo as any)._color = glow.color;
+        (halo as any)._phase = Math.random() * Math.PI * 2;
+        this.buildingGlows.push(halo);
+        this.mapContainer.add(halo);
+      }
     }
+
+    // Switch the ambient particle theme to match the biome
+    this.ambientTheme = mapId;
+    this.ambientAcc = 0;
 
     this.cameras.main.setBounds(0, 0, WORLD.WIDTH, WORLD.HEIGHT);
     this.flashMapLabel(MAP_LABELS[mapId]);
@@ -3476,14 +3510,188 @@ export class WorldScene extends Phaser.Scene {
   /* Update loop                                                      */
   /* ──────────────────────────────────────────────────────────────── */
 
+  /**
+   * Decide whether a decoration should glow, and how. Inn/shop/smithy
+   * get warm yellow light; fountain gets a cool cyan shimmer.
+   */
+  private buildingGlowFor(
+    type: string
+  ): { r: number; cy: number; color: number } | null {
+    switch (type) {
+      case "inn":
+      case "shop":
+      case "smithy":
+        // Warm window-light orange, lifted to the building's window line.
+        return { r: 64, cy: 24, color: 0xffb74d };
+      case "fountain":
+        return { r: 42, cy: 12, color: 0x80deea };
+      case "well":
+        return { r: 32, cy: 10, color: 0xfff176 };
+      default:
+        return null;
+    }
+  }
+
+  /** Per-frame flicker of building glow halos using sine + tiny noise. */
+  private tickBuildingGlows(timeSec: number) {
+    for (const g of this.buildingGlows) {
+      const cx = (g as any)._cx as number;
+      const cy = (g as any)._cy as number;
+      const r = (g as any)._r as number;
+      const color = (g as any)._color as number;
+      const phase = (g as any)._phase as number;
+      const flicker =
+        0.42 + 0.08 * Math.sin(timeSec * 2.7 + phase) +
+        0.05 * Math.sin(timeSec * 17 + phase * 3);
+      g.clear();
+      // Soft outer glow → bright inner core
+      g.fillStyle(color, flicker * 0.35);
+      g.fillCircle(cx, cy, r * 1.25);
+      g.fillStyle(color, flicker * 0.7);
+      g.fillCircle(cx, cy, r * 0.7);
+      g.fillStyle(color, flicker);
+      g.fillCircle(cx, cy, r * 0.32);
+    }
+  }
+
+  /** Biome-specific ambient particle config. */
+  private ambientConfig(): {
+    rate: number;
+    color: number;
+    altColor: number;
+    vx: () => number;
+    vy: () => number;
+    life: number;
+    blendAdd: boolean;
+    size: number;
+    twinkle: boolean;
+  } | null {
+    switch (this.ambientTheme) {
+      case "forest":
+        // Fireflies — drift gently, glow on/off
+        return {
+          rate: 8,
+          color: 0xfde047, altColor: 0xfffacd,
+          vx: () => (Math.random() - 0.5) * 8,
+          vy: () => (Math.random() - 0.5) * 6,
+          life: 3.6, blendAdd: true, size: 2, twinkle: true,
+        };
+      case "desert":
+        // Sand wisps blowing right
+        return {
+          rate: 14,
+          color: 0xd6c69a, altColor: 0xfff3c4,
+          vx: () => 28 + Math.random() * 16,
+          vy: () => (Math.random() - 0.5) * 4,
+          life: 2.4, blendAdd: false, size: 1.5, twinkle: false,
+        };
+      case "mountain":
+        // Embers floating up
+        return {
+          rate: 6,
+          color: 0xff7043, altColor: 0xfff176,
+          vx: () => (Math.random() - 0.5) * 6,
+          vy: () => -10 - Math.random() * 14,
+          life: 3.2, blendAdd: true, size: 2, twinkle: true,
+        };
+      case "lake":
+        // Bubbles rising slow
+        return {
+          rate: 5,
+          color: 0xb3e5fc, altColor: 0xffffff,
+          vx: () => (Math.random() - 0.5) * 2,
+          vy: () => -14 - Math.random() * 8,
+          life: 3.0, blendAdd: false, size: 2, twinkle: false,
+        };
+      case "town":
+        // Slow dust motes
+        return {
+          rate: 4,
+          color: 0xfff3c4, altColor: 0xffe0b2,
+          vx: () => (Math.random() - 0.5) * 3,
+          vy: () => -2 - Math.random() * 4,
+          life: 4.5, blendAdd: true, size: 1.5, twinkle: true,
+        };
+      default:
+        return null;
+    }
+  }
+
+  /** Spawn one ambient particle near the current camera view. */
+  private spawnAmbientParticle() {
+    const cfg = this.ambientConfig();
+    if (!cfg) return;
+    const cam = this.cameras.main;
+    // Random point inside the visible-ish area, with a bit of overdraw
+    const w = cam.width / cam.zoom;
+    const h = cam.height / cam.zoom;
+    const x = cam.midPoint.x + (Math.random() - 0.5) * w * 1.1;
+    const y = cam.midPoint.y + (Math.random() - 0.5) * h * 1.1;
+
+    const g = this.add.graphics();
+    if (cfg.blendAdd) g.setBlendMode(Phaser.BlendModes.ADD);
+    const col = Math.random() < 0.65 ? cfg.color : cfg.altColor;
+    g.setDepth(y + 200); // above tiles, generally above sprites
+    g.fillStyle(col, 0.95);
+    g.fillCircle(0, 0, cfg.size);
+    g.x = x;
+    g.y = y;
+
+    const dx = cfg.vx() * cfg.life;
+    const dy = cfg.vy() * cfg.life;
+
+    this.tweens.add({
+      targets: g,
+      x: x + dx,
+      y: y + dy,
+      duration: cfg.life * 1000,
+      ease: "Sine.easeInOut",
+    });
+    // Fade in then out
+    this.tweens.add({
+      targets: g,
+      alpha: { from: 0, to: 1 },
+      duration: cfg.life * 1000 * 0.3,
+      yoyo: true,
+      hold: cfg.life * 1000 * 0.4,
+      onComplete: () => g.destroy(),
+    });
+    if (cfg.twinkle) {
+      this.tweens.add({
+        targets: g,
+        scale: { from: 0.8, to: 1.4 },
+        duration: 380,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    }
+  }
+
   update(_t: number, dt: number) {
     const now = performance.now();
     const inTransition = now < this.mapTransitionUntil;
     const t = inTransition ? 1 : Math.min(1, (dt / 1000) * 15);
+    const dtSec = dt / 1000;
+    this.bobClock += dtSec;
 
+    // Walking step + idle breath: subtle scaleY modulation makes sprites
+    // feel alive without breaking depth sort or network interpolation.
     this.sprites.forEach((s) => {
+      const before = s.sprite.x;
+      const beforeY = s.sprite.y;
       s.sprite.x += (s.targetX - s.sprite.x) * t;
       s.sprite.y += (s.targetY - s.sprite.y) * t;
+      const speed = Math.hypot(s.sprite.x - before, s.sprite.y - beforeY);
+      if (speed > 0.05) {
+        // Walk step — fast squash-stretch cycle
+        s.sprite.scaleY = 1 + Math.sin(this.bobClock * 14) * 0.06;
+        s.sprite.scaleX = 1 - Math.sin(this.bobClock * 14) * 0.04;
+      } else {
+        // Idle breath — slow gentle wobble
+        s.sprite.scaleY = 1 + Math.sin(this.bobClock * 2.4) * 0.028;
+        s.sprite.scaleX = 1;
+      }
       s.sprite.setDepth(s.sprite.y);
       s.label.x = s.sprite.x;
       s.label.y = s.sprite.y - PLAYER.SIZE / 2 - 4;
@@ -3506,6 +3714,18 @@ export class WorldScene extends Phaser.Scene {
         if (d < 240) this.maybeShowBossBanner(mid, m);
       }
     });
+
+    // ── Ambient atmosphere ─────────────────────────────────────────
+    const cfg = this.ambientConfig();
+    if (cfg) {
+      this.ambientAcc += dtSec;
+      const step = 1 / cfg.rate;
+      while (this.ambientAcc > step) {
+        this.ambientAcc -= step;
+        this.spawnAmbientParticle();
+      }
+    }
+    this.tickBuildingGlows(this.bobClock);
 
     // ── Pointer / mouse input (PC only — touch uses on-screen buttons) ─
     const ptr = this.input.activePointer;
