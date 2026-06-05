@@ -1320,27 +1320,49 @@ export class WorldScene extends Phaser.Scene {
 
   private showHitFx(msg: FxHitPayload) {
     if (this.currentMap == null) return;
-    const isMyHit = msg.target === "monster"; // any monster hit credited as juice for me
+
     if (msg.target === "monster") {
       const m = this.monsters.get(msg.targetId);
       if (!m || m.mapId !== this.currentMap) return;
-      this.flashSprite(m.sprite, 0xff5252);
-      // Hitstop on monster kill — brief slow-motion makes kills feel weighty
+
+      // 1) Solid white flash (tintFill > tint — paints whole sprite white
+      //    regardless of texture).
+      this.punchFlashWhite(m.sprite, msg.crit ? 90 : 60);
+
+      // 2) Sprite scale punch — quick squash on impact.
+      this.spritePunch(m.sprite, msg.crit ? 1.35 : 1.18);
+
+      // 3) Visual knockback — shove the sprite a few px away from the
+      //    player; the next state sync snaps it back into place.
+      this.spriteKnockback(m, msg.crit ? 7 : 4);
+
+      // 4) Hit particles — small bright burst at the hit point.
+      this.spawnImpactBurst(msg.x, msg.y, !!msg.crit);
+
+      // 5) Camera + hitstop scaled by severity.
       if (msg.fatal) {
-        this.hitstop(70);
-        this.cameras.main.shake(160, 0.008);
+        this.hitstop(110);
+        this.cameras.main.shake(200, 0.012);
+        this.flashScreen(0xffffff, 0.55, 70);
         this.bumpKillStreak();
       } else if (msg.crit) {
-        this.cameras.main.shake(80, 0.005);
+        this.hitstop(55);
+        this.cameras.main.shake(120, 0.008);
+        this.flashScreen(0xffe4b5, 0.35, 60);
+      } else {
+        this.cameras.main.shake(55, 0.0035);
       }
     } else {
       const s = this.sprites.get(msg.targetId);
       if (!s || s.mapId !== this.currentMap) return;
-      this.flashSprite(s.sprite, 0xff5252);
+      this.punchFlashWhite(s.sprite, 90);
+      this.spritePunch(s.sprite, 1.18);
+      this.spawnImpactBurst(msg.x, msg.y, !!msg.crit);
       if (msg.targetId === this.mySessionId) {
         this.shakeCamera();
         this.flashHurtVignette(msg.dmg);
-        if (msg.fatal) this.cameras.main.shake(420, 0.018);
+        this.flashScreen(0xff3030, 0.32, 90);
+        if (msg.fatal) this.cameras.main.shake(520, 0.022);
       }
     }
     this.spawnDamageNumber(
@@ -1350,7 +1372,106 @@ export class WorldScene extends Phaser.Scene {
       msg.target === "player",
       !!msg.crit
     );
-    void isMyHit;
+  }
+
+  /** Solid white "I just got hit" tint, briefly. */
+  private punchFlashWhite(sprite: Phaser.GameObjects.Image, ms: number) {
+    sprite.setTintFill(0xffffff);
+    this.time.delayedCall(ms, () => sprite.clearTint());
+  }
+
+  /** Snappy scale punch on a sprite (yoyo back to original scale). */
+  private spritePunch(sprite: Phaser.GameObjects.Image, peak: number) {
+    const origX = sprite.scaleX;
+    const origY = sprite.scaleY;
+    this.tweens.add({
+      targets: sprite,
+      scaleX: origX * peak,
+      scaleY: origY * (2 - peak),
+      duration: 70,
+      yoyo: true,
+      ease: "Cubic.easeOut",
+      onComplete: () => sprite.setScale(origX, origY),
+    });
+  }
+
+  /** Quick away-from-attacker shove. Server position sync takes over next tick. */
+  private spriteKnockback(m: MonsterSprite, px: number) {
+    // Push from nearest player on this map
+    let bestDx = 0, bestDy = -1, bestD = Infinity;
+    this.sprites.forEach((s) => {
+      if (s.mapId !== m.mapId) return;
+      const ddx = m.sprite.x - s.sprite.x;
+      const ddy = m.sprite.y - s.sprite.y;
+      const d = Math.hypot(ddx, ddy);
+      if (d < bestD && d > 0.1) {
+        bestD = d;
+        bestDx = ddx / d;
+        bestDy = ddy / d;
+      }
+    });
+    const origX = m.sprite.x;
+    const origY = m.sprite.y;
+    this.tweens.add({
+      targets: m.sprite,
+      x: origX + bestDx * px,
+      y: origY + bestDy * px,
+      duration: 80,
+      yoyo: true,
+      ease: "Quad.easeOut",
+    });
+  }
+
+  /** Bright particle starburst at (x, y). */
+  private spawnImpactBurst(x: number, y: number, crit: boolean) {
+    const n = crit ? 10 : 6;
+    const colorMain = crit ? 0xfde047 : 0xffe9b0;
+    const colorAccent = crit ? 0xfb923c : 0xfff7d6;
+    // Center flash
+    const center = this.add.graphics().setDepth(99998);
+    center.fillStyle(0xffffff, 0.95);
+    center.fillCircle(x, y, crit ? 6 : 4);
+    center.fillStyle(colorMain, 0.6);
+    center.fillCircle(x, y, crit ? 12 : 8);
+    this.tweens.add({
+      targets: center,
+      alpha: 0,
+      duration: 160,
+      onComplete: () => center.destroy(),
+    });
+    // Radiating shards
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.3;
+      const dist = (crit ? 22 : 14) + Math.random() * 8;
+      const shard = this.add.graphics().setDepth(99998);
+      const col = i % 2 === 0 ? colorMain : colorAccent;
+      shard.fillStyle(col, 1);
+      shard.fillRect(x - 1, y - 1, 2, 2);
+      this.tweens.add({
+        targets: shard,
+        x: shard.x + Math.cos(a) * dist,
+        y: shard.y + Math.sin(a) * dist,
+        alpha: 0,
+        duration: 280 + Math.random() * 120,
+        ease: "Cubic.Out",
+        onComplete: () => shard.destroy(),
+      });
+    }
+  }
+
+  /** Brief full-screen colored flash overlay. */
+  private flashScreen(color: number, alpha: number, ms: number) {
+    const cam = this.cameras.main;
+    const rect = this.add
+      .rectangle(cam.midPoint.x, cam.midPoint.y, cam.width / cam.zoom, cam.height / cam.zoom, color, alpha)
+      .setScrollFactor(0)
+      .setDepth(99997);
+    this.tweens.add({
+      targets: rect,
+      alpha: 0,
+      duration: ms,
+      onComplete: () => rect.destroy(),
+    });
   }
 
   /** Brief slow-motion — pauses physics/tweens for `ms` then resumes. */

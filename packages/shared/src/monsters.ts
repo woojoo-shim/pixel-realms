@@ -71,13 +71,13 @@ export interface MonsterDef {
 
 export const MONSTER_DEFS: Record<MonsterType, MonsterDef> = {
   // ── Forest ────────────────────────────────────────────────────────
-  // slime: passive blob, contact damage only
+  // slime: small but actually approaches you — adds early-game tension
   slime: {
     type: "slime", displayName: "Slime",
-    level: 1, maxHp: 12, speed: 30, damage: 2,
+    level: 1, maxHp: 16, speed: 38, damage: 3,
     expReward: 4, goldReward: 2,
     radius: 9, color: 0x4caf50, accent: 0x2e7d32,
-    aggroRange: 0, wanderRange: 60,
+    aggroRange: 75, wanderRange: 60,
     attackKind: "melee",
   },
   // wolf: stalks, then dashes
