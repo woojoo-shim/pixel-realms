@@ -591,6 +591,19 @@ export class WorldScene extends Phaser.Scene {
       room.onMessage("fx:meteor-impact", (msg: FxMeteorImpactPayload) =>
         this.showMeteorImpactFx(msg)
       );
+      // Per-monster attack motions
+      room.onMessage(
+        "fx:monster-bolt",
+        (msg: {
+          fromX: number; fromY: number; toX: number; toY: number;
+          monsterType?: string;
+        }) => this.showMonsterBoltFx(msg)
+      );
+      room.onMessage(
+        "fx:monster-slam",
+        (msg: { x: number; y: number; radius: number; monsterType?: string }) =>
+          this.showMonsterSlamFx(msg)
+      );
       room.onMessage(
         "fx:boss-slain",
         (msg: { title: string; killerName: string }) =>
@@ -3034,6 +3047,135 @@ export class WorldScene extends Phaser.Scene {
         duration: 720,
         onComplete: () => txt.destroy(),
       });
+    }
+  }
+
+  /**
+   * Sandworm / eel ranged attack — a bolt streaks from monster to target.
+   * Per monster type the colour theme changes (sand for sandworm, electric
+   * cyan for eel, default purple for anything else).
+   */
+  private showMonsterBoltFx(msg: {
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    monsterType?: string;
+  }) {
+    if (this.currentMap == null) return;
+    const palette: Record<string, { core: number; glow: number }> = {
+      sandworm: { core: 0xfde68a, glow: 0xf59e0b },
+      eel: { core: 0xa7f3d0, glow: 0x06b6d4 },
+    };
+    const { core, glow } = palette[msg.monsterType ?? ""] ?? {
+      core: 0xddd6fe,
+      glow: 0x7c3aed,
+    };
+    // Outer glow line
+    const outer = this.add.graphics().setDepth(99998);
+    outer.lineStyle(7, glow, 0.45);
+    outer.beginPath();
+    outer.moveTo(msg.fromX, msg.fromY);
+    outer.lineTo(msg.toX, msg.toY);
+    outer.strokePath();
+    // Bright core line
+    const inner = this.add.graphics().setDepth(99999);
+    inner.lineStyle(2.5, core, 1);
+    inner.beginPath();
+    inner.moveTo(msg.fromX, msg.fromY);
+    inner.lineTo(msg.toX, msg.toY);
+    inner.strokePath();
+    // Impact burst at the target
+    const burst = this.add.graphics().setDepth(99999);
+    burst.fillStyle(core, 0.9);
+    burst.fillCircle(msg.toX, msg.toY, 5);
+    burst.fillStyle(glow, 0.45);
+    burst.fillCircle(msg.toX, msg.toY, 11);
+    [outer, inner, burst].forEach((g) =>
+      this.tweens.add({
+        targets: g,
+        alpha: 0,
+        duration: 260,
+        onComplete: () => g.destroy(),
+      })
+    );
+    this.tweens.add({
+      targets: burst,
+      scale: 1.6,
+      duration: 260,
+    });
+  }
+
+  /**
+   * Golem ground slam — expanding ring at the slam centre, dust puff and
+   * brief camera shake when the centre is on this map.
+   */
+  private showMonsterSlamFx(msg: {
+    x: number;
+    y: number;
+    radius: number;
+    monsterType?: string;
+  }) {
+    if (this.currentMap == null) return;
+    // Bright initial flash
+    const flash = this.add.graphics().setDepth(99998);
+    flash.fillStyle(0xfff3cd, 0.65);
+    flash.fillCircle(msg.x, msg.y, msg.radius * 0.5);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 240,
+      onComplete: () => flash.destroy(),
+    });
+    // Expanding shock ring
+    const ring = this.add.graphics().setDepth(99998);
+    ring.lineStyle(5, 0xfde68a, 0.95);
+    ring.strokeCircle(msg.x, msg.y, 8);
+    ring.lineStyle(2.5, 0xfffbeb, 0.7);
+    ring.strokeCircle(msg.x, msg.y, 14);
+    // Crude "scale" by retweening a custom property each frame
+    let r = 8;
+    const tweenObj = { r };
+    this.tweens.add({
+      targets: tweenObj,
+      r: msg.radius,
+      duration: 380,
+      ease: "Cubic.easeOut",
+      onUpdate: () => {
+        ring.clear();
+        ring.lineStyle(5, 0xfde68a, Math.max(0, 0.95 * (1 - tweenObj.r / msg.radius)));
+        ring.strokeCircle(msg.x, msg.y, tweenObj.r);
+        ring.lineStyle(2.5, 0xfffbeb, Math.max(0, 0.6 * (1 - tweenObj.r / msg.radius)));
+        ring.strokeCircle(msg.x, msg.y, tweenObj.r + 6);
+      },
+      onComplete: () => ring.destroy(),
+    });
+    // Dust puffs scattered around the slam
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const d = msg.radius * (0.4 + Math.random() * 0.4);
+      const px = msg.x + Math.cos(a) * d;
+      const py = msg.y + Math.sin(a) * d;
+      const puff = this.add.graphics().setDepth(99997);
+      puff.fillStyle(0xd6c69a, 0.65);
+      puff.fillCircle(px, py, 4 + Math.random() * 3);
+      this.tweens.add({
+        targets: puff,
+        alpha: 0,
+        x: puff.x + (Math.cos(a) * 8),
+        y: puff.y + (Math.sin(a) * 4) - 4,
+        duration: 480 + Math.random() * 160,
+        onComplete: () => puff.destroy(),
+      });
+    }
+    // Camera shake when the slam centre is reasonably close to me
+    const me = this.sprites.get(this.mySessionId ?? "");
+    if (me) {
+      const d = Math.hypot(me.sprite.x - msg.x, me.sprite.y - msg.y);
+      if (d < msg.radius * 2) {
+        const power = Math.max(0.003, 0.012 * (1 - d / (msg.radius * 2)));
+        this.cameras.main.shake(220, power);
+      }
     }
   }
 
