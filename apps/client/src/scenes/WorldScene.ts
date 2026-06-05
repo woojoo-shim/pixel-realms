@@ -428,22 +428,22 @@ export class WorldScene extends Phaser.Scene {
         .pr-btn:hover  { border-color: rgba(252,211,77,0.9); }
         .pr-btn:active { transform: translateY(1px); }
         .pr-icon-btn {
-          width:  clamp(32px, 6.5vmin, 44px);
-          height: clamp(32px, 6.5vmin, 44px);
-          font-size: clamp(14px, 3vmin, 22px);
+          width:  clamp(36px, 6.5vmin, 58px);
+          height: clamp(36px, 6.5vmin, 58px);
+          font-size: clamp(15px, 3vmin, 26px);
           display: flex; align-items: center; justify-content: center;
           z-index: 22;
         }
         .pr-side-stack {
           position: fixed;
-          top: clamp(70px, 12vmin, 110px); left: clamp(6px, 1.4vmin, 14px);
-          display: flex; flex-direction: column; gap: 6px;
+          top: clamp(78px, 12vmin, 130px); left: clamp(8px, 1.4vmin, 18px);
+          display: flex; flex-direction: column; gap: clamp(6px, 0.9vmin, 10px);
           z-index: 22;
         }
         .pr-badge {
-          width: clamp(64px, 13vmin, 90px);
-          padding: clamp(4px, 0.8vmin, 7px) 0;
-          font-size: clamp(9px, 1.6vmin, 12px);
+          width: clamp(72px, 13vmin, 118px);
+          padding: clamp(5px, 0.9vmin, 10px) 0;
+          font-size: clamp(10px, 1.6vmin, 14px);
           font-weight: bold;
           letter-spacing: 1px;
           text-align: center;
@@ -464,8 +464,8 @@ export class WorldScene extends Phaser.Scene {
     bagBtn.className = "pr-btn pr-icon-btn";
     Object.assign(bagBtn.style, {
       position: "fixed",
-      top: "clamp(6px, 1.4vmin, 14px)",
-      left: "calc(50% + clamp(72px, 16vmin, 110px))",
+      top: "clamp(8px, 1.4vmin, 18px)",
+      left: "calc(50% + clamp(78px, 16vmin, 140px))",
     } as CSSStyleDeclaration);
     bagBtn.addEventListener("click", () => this.inventoryPanel.toggle());
     document.body.appendChild(bagBtn);
@@ -661,16 +661,17 @@ export class WorldScene extends Phaser.Scene {
       const orb = document.createElement("div");
       Object.assign(orb.style, {
         position: "fixed",
-        bottom: "10px",
-        [side]: "10px",
-        width: "84px",
-        height: "84px",
+        bottom: "clamp(10px, 1.6vmin, 18px)",
+        [side]: "clamp(10px, 1.6vmin, 18px)",
+        // Scales with screen — 84px on phones, up to 120px on desktop.
+        width: "clamp(84px, 12vmin, 120px)",
+        height: "clamp(84px, 12vmin, 120px)",
         borderRadius: "50%",
         background:
           "radial-gradient(circle at 32% 28%, #4a3a30 0%, #1a0e08 60%, #050302 100%)",
         border: `3px solid ${rimColor}`,
         boxShadow:
-          `inset 0 0 8px rgba(0,0,0,0.8), 0 2px 10px rgba(0,0,0,0.6)`,
+          `inset 0 0 10px rgba(0,0,0,0.8), 0 2px 14px rgba(0,0,0,0.6)`,
         overflow: "hidden",
         pointerEvents: "none",
       } as CSSStyleDeclaration);
@@ -710,7 +711,7 @@ export class WorldScene extends Phaser.Scene {
         color: "#fff",
         fontFamily: "monospace",
         fontWeight: "bold",
-        fontSize: "13px",
+        fontSize: "clamp(13px, 1.8vmin, 17px)",
         textShadow: "0 1px 3px #000, 0 0 4px #000",
         pointerEvents: "none",
       } as CSSStyleDeclaration);
@@ -741,23 +742,24 @@ export class WorldScene extends Phaser.Scene {
     this.hudCenter = document.createElement("div");
     Object.assign(this.hudCenter.style, {
       position: "fixed",
-      bottom: "14px",
-      left: "108px",
-      right: "108px",
+      bottom: "clamp(14px, 2vmin, 22px)",
+      // Leave room either side for the (now scalable) orbs
+      left: "clamp(108px, 14vmin, 150px)",
+      right: "clamp(108px, 14vmin, 150px)",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      gap: "4px",
+      gap: "clamp(4px, 0.6vmin, 8px)",
       pointerEvents: "none",
     } as CSSStyleDeclaration);
 
     this.hudLabel = document.createElement("div");
     Object.assign(this.hudLabel.style, {
       background: "rgba(0,0,0,0.6)",
-      padding: "3px 12px",
+      padding: "clamp(3px, 0.5vmin, 6px) clamp(10px, 1.4vmin, 16px)",
       borderRadius: "4px",
       border: "1px solid rgba(255,255,255,0.15)",
-      fontSize: "11px",
+      fontSize: "clamp(11px, 1.5vmin, 14px)",
       letterSpacing: "1px",
     } as CSSStyleDeclaration);
     this.hudLabel.textContent = "connecting…";
@@ -765,8 +767,8 @@ export class WorldScene extends Phaser.Scene {
     const expBarWrap = document.createElement("div");
     Object.assign(expBarWrap.style, {
       position: "relative",
-      width: "min(220px, 60vw)",
-      height: "8px",
+      width: "min(280px, 60vw)",
+      height: "clamp(8px, 1.2vmin, 12px)",
       background: "rgba(0,0,0,0.6)",
       borderRadius: "4px",
       border: "1px solid rgba(255,255,255,0.15)",
@@ -788,9 +790,9 @@ export class WorldScene extends Phaser.Scene {
     this.hudStats = document.createElement("div");
     Object.assign(this.hudStats.style, {
       background: "rgba(0,0,0,0.5)",
-      padding: "3px 10px",
+      padding: "clamp(3px, 0.5vmin, 6px) clamp(10px, 1.4vmin, 16px)",
       borderRadius: "4px",
-      fontSize: "11px",
+      fontSize: "clamp(11px, 1.5vmin, 14px)",
     } as CSSStyleDeclaration);
     const statsLine = document.createElement("div");
     statsLine.id = "stats-line";

@@ -13,16 +13,16 @@ export class NovaButton {
     this.el.textContent = "❄";
     Object.assign(this.el.style, {
       position: "fixed",
-      right: "clamp(96px, 19vmin, 140px)",
+      right: "clamp(102px, 19vmin, 168px)",
       bottom: "210px",
-      width: "clamp(48px, 10vmin, 72px)",
-      height: "clamp(48px, 10vmin, 72px)",
+      width: "clamp(54px, 11vmin, 92px)",
+      height: "clamp(54px, 11vmin, 92px)",
       borderRadius: "50%",
       border: "3px solid rgba(125,211,252,0.95)",
       background:
         "radial-gradient(circle at 32% 28%, rgba(207,250,254,0.45), rgba(14,116,144,0.92) 60%, rgba(8,47,73,0.95))",
       color: "#e0f2fe",
-      fontSize: "clamp(20px, 5vmin, 34px)",
+      fontSize: "clamp(22px, 5.5vmin, 42px)",
       fontFamily: "monospace",
       fontWeight: "bold",
       zIndex: "21",

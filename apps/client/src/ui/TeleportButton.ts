@@ -16,8 +16,8 @@ export class TeleportButton {
       position: "fixed",
       right: "clamp(20px, 4vmin, 40px)",
       bottom: "290px",
-      width: "clamp(42px, 9vmin, 64px)",
-      height: "clamp(42px, 9vmin, 64px)",
+      width: "clamp(48px, 9.5vmin, 82px)",
+      height: "clamp(48px, 9.5vmin, 82px)",
       borderRadius: "50%",
       border: "3px solid rgba(196,132,252,0.95)",
       background:

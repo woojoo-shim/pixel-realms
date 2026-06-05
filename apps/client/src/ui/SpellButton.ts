@@ -13,16 +13,16 @@ export class SpellButton {
     this.el.textContent = "🔥";
     Object.assign(this.el.style, {
       position: "fixed",
-      right: "clamp(96px, 19vmin, 140px)",
+      right: "clamp(102px, 19vmin, 168px)",
       bottom: "124px",
-      width: "clamp(56px, 12vmin, 84px)",
-      height: "clamp(56px, 12vmin, 84px)",
+      width: "clamp(62px, 13vmin, 110px)",
+      height: "clamp(62px, 13vmin, 110px)",
       borderRadius: "50%",
       border: "3px solid rgba(96,165,250,0.95)",
       background:
         "radial-gradient(circle at 32% 28%, rgba(191,219,254,0.45), rgba(30,58,138,0.92) 60%, rgba(8,20,60,0.95))",
       color: "#fff",
-      fontSize: "32px",
+      fontSize: "clamp(22px, 5.5vmin, 48px)",
       fontFamily: "monospace",
       fontWeight: "bold",
       zIndex: "21",
