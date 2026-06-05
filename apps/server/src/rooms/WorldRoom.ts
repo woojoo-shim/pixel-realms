@@ -176,6 +176,15 @@ interface MonsterRuntime {
   aggroSession: string;
   /** Epoch ms until which the monster moves at slow factor (Frost Nova). */
   slowedUntil: number;
+  /** Charge windup phase end (epoch ms). 0 = not winding. */
+  chargeWindupUntil: number;
+  /** Charge dash phase end (epoch ms). 0 = not dashing. */
+  chargeUntil: number;
+  /** Locked dash direction unit vector while dashing. */
+  chargeDx: number;
+  chargeDy: number;
+  /** Slam windup phase end. 0 = not slamming. */
+  slamWindupUntil: number;
 }
 
 interface RespawnTask {
@@ -628,6 +637,11 @@ export class WorldRoom extends Room<WorldState> {
       nextAttackAt: 0,
       aggroSession: "",
       slowedUntil: 0,
+      chargeWindupUntil: 0,
+      chargeUntil: 0,
+      chargeDx: 0,
+      chargeDy: 0,
+      slamWindupUntil: 0,
     });
   }
 
@@ -694,35 +708,163 @@ export class WorldRoom extends Room<WorldState> {
       }
 
       if (target) {
-        // Chase / attack
         const tp = target as PlayerState;
         const dx = tp.x - s.x;
         const dy = tp.y - s.y;
-        const dist = Math.hypot(dx, dy);
-
+        const dist = Math.hypot(dx, dy) || 0.0001;
         if (Math.abs(dx) > Math.abs(dy)) s.dir = dx > 0 ? "right" : "left";
         else s.dir = dy > 0 ? "down" : "up";
 
-        if (dist < COMBAT.MONSTER_ATTACK_RANGE + PLAYER_RADIUS + def.radius) {
-          s.moving = false;
-          if (now >= rt.nextAttackAt) {
-            rt.nextAttackAt = now + COMBAT.MONSTER_ATTACK_COOLDOWN_MS;
+        const kind = def.attackKind ?? "melee";
+        const stand = { blockedTiles: MONSTER_BLOCKED_TILES[rt.type] };
+        const baseAtkCd = COMBAT.MONSTER_ATTACK_COOLDOWN_MS;
+
+        const dealContact = () => {
+          const dmg = s.boss
+            ? Math.round(def.damage * BOSS.DMG_MULT)
+            : s.champion
+              ? Math.round(def.damage * CHAMPION.DMG_MULT)
+              : def.damage;
+          this.applyDamageToPlayer(tp, targetSession, dmg);
+        };
+        const moveToward = (tx: number, ty: number, sp: number) => {
+          const ddx = tx - s.x, ddy = ty - s.y;
+          const dd = Math.hypot(ddx, ddy) || 0.0001;
+          const step = Math.min(dd, sp * dtSec);
+          const nx = s.x + (ddx / dd) * step;
+          const ny = s.y + (ddy / dd) * step;
+          if (canStandAt(pair.data, pair.grid, nx, s.y, def.radius, stand))
+            s.x = nx;
+          if (canStandAt(pair.data, pair.grid, s.x, ny, def.radius, stand))
+            s.y = ny;
+        };
+        const contactRange =
+          COMBAT.MONSTER_ATTACK_RANGE + PLAYER_RADIUS + def.radius;
+
+        // ─── CHARGE: telegraph → dash → recover ────────────────────
+        if (kind === "charge") {
+          if (now < rt.chargeUntil) {
+            // Dashing: locked direction, fast, contact damage on touch
+            const dashSpeed =
+              def.speed * (def.chargeSpeedMult ?? 2.5) * speedMul;
+            moveToward(
+              s.x + rt.chargeDx * 200,
+              s.y + rt.chargeDy * 200,
+              dashSpeed
+            );
+            s.moving = true;
+            if (dist < contactRange && now >= rt.nextAttackAt) {
+              rt.nextAttackAt = now + 600; // brief lockout to avoid double-hits
+              dealContact();
+              rt.chargeUntil = now; // stop dash on hit
+              rt.nextAttackAt = now + (def.attackCooldownMs ?? baseAtkCd);
+            }
+          } else if (now < rt.chargeWindupUntil) {
+            // Telegraph: stand still, face target
+            s.moving = false;
+          } else if (dist < contactRange) {
+            // Already on top of the target — just bite
+            s.moving = false;
+            if (now >= rt.nextAttackAt) {
+              rt.nextAttackAt = now + (def.attackCooldownMs ?? baseAtkCd);
+              dealContact();
+            }
+          } else if (now >= rt.nextAttackAt) {
+            // Begin a new windup → dash cycle
+            rt.chargeWindupUntil = now + 380;
+            rt.chargeUntil = now + 380 + 380; // 380ms windup, 380ms dash
+            rt.chargeDx = dx / dist;
+            rt.chargeDy = dy / dist;
+            s.moving = false;
+          } else {
+            // Off cooldown reposition slowly
+            moveToward(tp.x, tp.y, effSpeed * 0.5);
+            s.moving = true;
+          }
+          return;
+        }
+
+        // ─── RANGED: keep distance, fire projectiles ──────────────
+        if (kind === "ranged") {
+          const ideal = def.rangedDistance ?? 130;
+          const tooClose = dist < ideal * 0.65;
+          const tooFar = dist > ideal * 1.15;
+          if (tooClose) {
+            // Back away from target
+            moveToward(
+              s.x - (dx / dist) * 100,
+              s.y - (dy / dist) * 100,
+              effSpeed
+            );
+            s.moving = true;
+          } else if (tooFar) {
+            moveToward(tp.x, tp.y, effSpeed);
+            s.moving = true;
+          } else {
+            s.moving = false;
+          }
+          if (now >= rt.nextAttackAt && dist < ideal * 1.3) {
+            rt.nextAttackAt = now + (def.attackCooldownMs ?? baseAtkCd);
             const dmg = s.boss
               ? Math.round(def.damage * BOSS.DMG_MULT)
               : s.champion
                 ? Math.round(def.damage * CHAMPION.DMG_MULT)
                 : def.damage;
+            // Server-authoritative instant-hit "projectile": flat damage to
+            // the locked target. Client gets a fx to render the bolt.
             this.applyDamageToPlayer(tp, targetSession, dmg);
+            this.broadcast("fx:monster-bolt", {
+              fromX: s.x, fromY: s.y, toX: tp.x, toY: tp.y,
+              monsterType: rt.type,
+            });
+          }
+          return;
+        }
+
+        // ─── SLAM: lumber up, telegraph, AOE around self ──────────
+        if (kind === "slam") {
+          const slamR = def.attackRadius ?? 55;
+          if (now < rt.slamWindupUntil) {
+            // Windup — frozen in place
+            s.moving = false;
+            if (now + dtMs >= rt.slamWindupUntil) {
+              // Resolve the slam this frame
+              this.state.players.forEach((p, sid) => {
+                if (!p.alive || p.mapId !== s.mapId) return;
+                if (Math.hypot(p.x - s.x, p.y - s.y) < slamR) {
+                  const dmg = s.boss
+                    ? Math.round(def.damage * BOSS.DMG_MULT)
+                    : s.champion
+                      ? Math.round(def.damage * CHAMPION.DMG_MULT)
+                      : def.damage;
+                  this.applyDamageToPlayer(p, sid, dmg);
+                }
+              });
+              this.broadcast("fx:monster-slam", {
+                x: s.x, y: s.y, radius: slamR, monsterType: rt.type,
+              });
+              rt.nextAttackAt = now + (def.attackCooldownMs ?? baseAtkCd);
+            }
+          } else if (dist < slamR * 0.7 && now >= rt.nextAttackAt) {
+            // In range, off cooldown — begin telegraph
+            rt.slamWindupUntil = now + 650;
+            s.moving = false;
+          } else {
+            moveToward(tp.x, tp.y, effSpeed);
+            s.moving = true;
+          }
+          return;
+        }
+
+        // ─── MELEE (default): walk in, contact damage ─────────────
+        if (dist < contactRange) {
+          s.moving = false;
+          if (now >= rt.nextAttackAt) {
+            rt.nextAttackAt = now + baseAtkCd;
+            dealContact();
           }
         } else {
-          const step = Math.min(dist, effSpeed * dtSec);
-          const nx = s.x + (dx / dist) * step;
-          const ny = s.y + (dy / dist) * step;
-          const stand = { blockedTiles: MONSTER_BLOCKED_TILES[rt.type] };
-          if (canStandAt(pair.data, pair.grid, nx, s.y, def.radius, stand))
-            s.x = nx;
-          if (canStandAt(pair.data, pair.grid, s.x, ny, def.radius, stand))
-            s.y = ny;
+          moveToward(tp.x, tp.y, effSpeed);
           s.moving = true;
         }
         return;
