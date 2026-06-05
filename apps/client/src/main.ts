@@ -5,9 +5,11 @@ import { WorldScene } from "./scenes/WorldScene.js";
 
 const isTouch =
   "ontouchstart" in window || (navigator.maxTouchPoints ?? 0) > 0;
-// Zoom in only on narrow (mobile) screens so sprites stay readable.
+// Tighter view — the world reads MUCH bigger when you can only see a small
+// slice at once. Mobile: 3× (was 2×). Desktop: 1.8× (was 1×). Sprites stay
+// crisp because pixelArt + nearest-neighbor scaling do the up-resing.
 const isMobileViewport = window.innerWidth < 900;
-const zoom = isMobileViewport ? 2 : 1;
+const zoom = isMobileViewport ? 3 : 1.8;
 
 new Phaser.Game({
   type: Phaser.AUTO,
