@@ -23,6 +23,7 @@ import {
   SellItemMessage,
   VENDOR,
   sellPriceFor,
+  FxChainPayload,
   FxHitPayload,
   FxLevelUpPayload,
   FxPickupPayload,
@@ -277,6 +278,9 @@ export class WorldRoom extends Room<WorldState> {
     });
     this.onMessage<{ tx: number; ty: number }>("meteor", (client, msg) => {
       this.handleMeteor(client.sessionId, msg?.tx, msg?.ty);
+    });
+    this.onMessage("chain", (client) => {
+      this.handleChainLightning(client.sessionId);
     });
 
     this.onMessage<EquipMessage>("equip", (client, msg) => {
@@ -1515,6 +1519,110 @@ export class WorldRoom extends Room<WorldState> {
 
     for (const h of hits) {
       if (h.fatal) this.killMonster(h.id, casterSession);
+    }
+  }
+
+  /* ── Chain Lightning ─────────────────────────────────────────────── */
+
+  private handleChainLightning(sessionId: string) {
+    const p = this.state.players.get(sessionId);
+    if (!p || !p.alive) return;
+    const now = Date.now();
+    const cd = this.playerCastCd.get(sessionId) ?? 0;
+    if (now < cd) return;
+    if (p.mp < SPELLS.CHAIN_COST) return;
+
+    // Find the first target: nearest monster in CHAIN_RANGE on the same map.
+    type Pick = { id: string; m: MonsterState; d: number };
+    let first: Pick | null = null;
+    this.state.monsters.forEach((m, id) => {
+      if (m.mapId !== p.mapId || m.hp <= 0) return;
+      const d = Math.hypot(m.x - p.x, m.y - p.y);
+      if (d > SPELLS.CHAIN_RANGE) return;
+      if (!first || d < first.d) first = { id, m, d } as Pick;
+    });
+    const firstHop = first as Pick | null;
+    if (!firstHop) return;
+
+    // Deduct + cooldown only after we know we have a target.
+    p.mp -= SPELLS.CHAIN_COST;
+    this.playerCastCd.set(sessionId, now + SPELLS.CHAIN_COOLDOWN_MS);
+    p.castUntil = now + 220;
+
+    // Face the first target so the swing FX matches.
+    const fdx = firstHop.m.x - p.x;
+    const fdy = firstHop.m.y - p.y;
+    if (Math.abs(fdx) > Math.abs(fdy)) p.dir = fdx > 0 ? "right" : "left";
+    else p.dir = fdy > 0 ? "down" : "up";
+
+    // Skill / equipment-aware base damage for the FIRST hop.
+    const ceLv = skillLv(p, "criticalEye");
+    const critChance =
+      LOOT.CRIT_CHANCE + ceLv * SKILL_EFFECT.criticalEye_critPct;
+    const baseDmg =
+      (playerDamage(p.level, p.statStr) + equipBonus(p).damage) *
+      (buffActive(p, "damage") ? SHRINE.DAMAGE_MULT : 1) *
+      SPELLS.CHAIN_DMG_MULT;
+
+    // Walk the chain. Each hop picks the nearest non-visited monster
+    // within CHAIN_JUMP_RANGE of the previous one.
+    const visited = new Set<string>();
+    visited.add(firstHop.id);
+    const chain: { id: string; m: MonsterState }[] = [
+      { id: firstHop.id, m: firstHop.m },
+    ];
+    let cursor = firstHop.m;
+    while (chain.length < SPELLS.CHAIN_MAX_TARGETS) {
+      let best: Pick | null = null;
+      this.state.monsters.forEach((m, id) => {
+        if (visited.has(id)) return;
+        if (m.mapId !== p.mapId || m.hp <= 0) return;
+        const d = Math.hypot(m.x - cursor.x, m.y - cursor.y);
+        if (d > SPELLS.CHAIN_JUMP_RANGE) return;
+        if (!best || d < best.d) best = { id, m, d } as Pick;
+      });
+      const nextHop = best as Pick | null;
+      if (!nextHop) break;
+      visited.add(nextHop.id);
+      chain.push({ id: nextHop.id, m: nextHop.m });
+      cursor = nextHop.m;
+    }
+
+    // Apply damage with per-hop falloff. Roll one crit for the whole
+    // cast so the entire chain feels like one event.
+    const crit = Math.random() < critChance;
+    const critMult = crit ? LOOT.CRIT_MULT : 1;
+    const hits: { id: string; dmg: number; fatal: boolean }[] = [];
+    let remaining = baseDmg;
+    for (const hop of chain) {
+      const dmg = Math.round(remaining * critMult);
+      hop.m.hp = Math.max(0, hop.m.hp - dmg);
+      const fatal = hop.m.hp <= 0;
+      this.broadcast("fx:hit", {
+        x: hop.m.x,
+        y: hop.m.y - 14,
+        dmg,
+        target: "monster",
+        targetId: hop.id,
+        fatal,
+        crit,
+      } satisfies FxHitPayload);
+      hits.push({ id: hop.id, dmg, fatal });
+      remaining *= SPELLS.CHAIN_FALLOFF;
+    }
+
+    // Broadcast the arc geometry so clients can draw the bolt.
+    this.broadcast("fx:chain", {
+      sessionId,
+      hops: [
+        { x: p.x, y: p.y - 12 },
+        ...chain.map((h) => ({ x: h.m.x, y: h.m.y - 12 })),
+      ],
+      hits,
+    } satisfies FxChainPayload);
+
+    for (const h of hits) {
+      if (h.fatal) this.killMonster(h.id, sessionId);
     }
   }
 

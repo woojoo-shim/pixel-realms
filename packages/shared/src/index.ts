@@ -152,7 +152,30 @@ export const SPELLS = {
   METEOR_DELAY_MS: 1100,    // warning -> impact
   METEOR_DMG_MULT: 2.5,
   METEOR_COOLDOWN_MS: 2800,
+
+  // Chain Lightning — single bolt that jumps to up to N nearby
+  // monsters, losing power on each hop.
+  CHAIN_COST: 22,
+  /** Pixels from the caster to the FIRST monster. */
+  CHAIN_RANGE: 200,
+  /** Pixels from the previous target to the next chain hop. */
+  CHAIN_JUMP_RANGE: 140,
+  /** Maximum chain length, including the primary hit. */
+  CHAIN_MAX_TARGETS: 4,
+  /** Multiplier applied to remaining damage per hop. */
+  CHAIN_FALLOFF: 0.78,
+  /** First-hit damage multiplier (relative to player base damage). */
+  CHAIN_DMG_MULT: 1.4,
+  CHAIN_COOLDOWN_MS: 1100,
 } as const;
+
+/** Each ordered hop in a chain-lightning cast: {id, x, y, dmg, fatal}. */
+export interface FxChainPayload {
+  sessionId: string;
+  /** First node is the caster (origin). Subsequent are monster targets. */
+  hops: { x: number; y: number }[];
+  hits: { id: string; dmg: number; fatal: boolean }[];
+}
 
 export interface FxTeleportPayload {
   sessionId: string;

@@ -10,6 +10,7 @@ import {
   FxLevelUpPayload,
   FxPickupPayload,
   FxCastPayload,
+  FxChainPayload,
   FxNovaPayload,
   FxTeleportPayload,
   FxMeteorWarningPayload,
@@ -181,6 +182,8 @@ export class WorldScene extends Phaser.Scene {
   private nextNovaAt = 0;
   private nextTeleportAt = 0;
   private nextMeteorAt = 0;
+  private nextChainAt = 0;
+  private gKey?: Phaser.Input.Keyboard.Key;
   /** Vignette overlay following the camera. */
   private vignette?: Phaser.GameObjects.Image;
 
@@ -315,6 +318,7 @@ export class WorldScene extends Phaser.Scene {
       this.key1.on("down", () => this.sendHeal());
       this.key2 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
       this.key3 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+      this.gKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
 
       this.shiftKey = this.input.keyboard.addKey(
         Phaser.Input.Keyboard.KeyCodes.SHIFT
@@ -586,6 +590,9 @@ export class WorldScene extends Phaser.Scene {
       );
       room.onMessage("fx:cast", (msg: FxCastPayload) => this.showCastFx(msg));
       room.onMessage("fx:nova", (msg: FxNovaPayload) => this.showNovaFx(msg));
+      room.onMessage("fx:chain", (msg: FxChainPayload) =>
+        this.showChainFx(msg)
+      );
       room.onMessage("fx:shrine", (msg: FxShrinePayload) =>
         this.showShrineActivateFx(msg)
       );
@@ -2309,6 +2316,11 @@ export class WorldScene extends Phaser.Scene {
     this.room.send("cast", msg);
   }
 
+  private sendChain() {
+    if (!this.room) return;
+    this.room.send("chain", {});
+  }
+
   /** Compute a target world position the player wants to aim at. Uses the
    *  mouse cursor for PC and the facing direction (or current movement) for
    *  touch devices. */
@@ -3462,6 +3474,78 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private showChainFx(msg: FxChainPayload) {
+    if (this.currentMap == null) return;
+    if (!msg.hops || msg.hops.length < 2) return;
+
+    // Single graphics object to draw the whole branching arc, then fade.
+    const g = this.add.graphics().setDepth(99998);
+
+    // Draw the bolt with a few jittered passes for the "electric" feel.
+    const drawJaggedBolt = (
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+      color: number,
+      alpha: number,
+      thickness: number,
+      jitter: number
+    ) => {
+      const SEGMENTS = 8;
+      g.lineStyle(thickness, color, alpha);
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      for (let i = 1; i < SEGMENTS; i++) {
+        const t = i / SEGMENTS;
+        const px = a.x + (b.x - a.x) * t + (Math.random() - 0.5) * jitter;
+        const py = a.y + (b.y - a.y) * t + (Math.random() - 0.5) * jitter;
+        g.lineTo(px, py);
+      }
+      g.lineTo(b.x, b.y);
+      g.strokePath();
+    };
+
+    const redraw = () => {
+      g.clear();
+      for (let i = 0; i < msg.hops.length - 1; i++) {
+        const a = msg.hops[i]!;
+        const b = msg.hops[i + 1]!;
+        // Outer halo
+        drawJaggedBolt(a, b, 0xfde047, 0.35, 8, 10);
+        // Mid bolt
+        drawJaggedBolt(a, b, 0xfff7d6, 0.85, 4, 6);
+        // White-hot core
+        drawJaggedBolt(a, b, 0xffffff, 1, 1.5, 2);
+      }
+      // Sparks at each target node
+      for (let i = 1; i < msg.hops.length; i++) {
+        const node = msg.hops[i]!;
+        g.fillStyle(0xfff7d6, 0.9);
+        g.fillCircle(node.x, node.y, 5);
+        g.fillStyle(0xffffff, 1);
+        g.fillCircle(node.x, node.y, 2);
+      }
+    };
+    redraw();
+
+    // Re-jitter every ~30ms for a flickering bolt, then fade out.
+    const flickerHandle = setInterval(redraw, 35);
+    this.tweens.add({
+      targets: g,
+      alpha: { from: 1, to: 0 },
+      duration: 380,
+      ease: "Cubic.easeIn",
+      onComplete: () => {
+        clearInterval(flickerHandle);
+        g.destroy();
+      },
+    });
+
+    // Small screen shake for the caster's view if it was their cast.
+    if (msg.sessionId === this.mySessionId) {
+      this.cameras.main.shake(180, 0.0035);
+    }
+  }
+
   private showNovaFx(msg: FxNovaPayload) {
     if (this.currentMap == null) return;
 
@@ -3827,6 +3911,12 @@ export class WorldScene extends Phaser.Scene {
     if (wantNova && now >= this.nextNovaAt) {
       this.sendNova();
       this.nextNovaAt = now + SPELLS.FROST_NOVA_COOLDOWN_MS;
+    }
+
+    // Chain Lightning — G key on desktop. Hold to keep firing.
+    if (!!this.gKey?.isDown && now >= this.nextChainAt) {
+      this.sendChain();
+      this.nextChainAt = now + SPELLS.CHAIN_COOLDOWN_MS;
     }
 
     // Keep character/inventory panels in sync while open.
