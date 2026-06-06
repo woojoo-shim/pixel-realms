@@ -185,7 +185,10 @@ export class WorldScene extends Phaser.Scene {
   private vignette?: Phaser.GameObjects.Image;
 
   // ── D2-style HUD orbs (DOM)
-  private hudHpOrb?: HTMLDivElement;
+  private hudHpOrb?: HTMLDivElement; // legacy ref (kept for cleanup)
+  private hudPortrait?: HTMLDivElement;
+  private hudLvPill?: HTMLDivElement;
+  private hudName?: HTMLDivElement;
   private hudHpFillOrb?: HTMLDivElement;
   private hudHpText?: HTMLSpanElement;
   private buffEl?: HTMLDivElement;
@@ -652,159 +655,200 @@ export class WorldScene extends Phaser.Scene {
       pointerEvents: "none",
     } as CSSStyleDeclaration);
 
-    /* Build a Diablo-style orb. */
-    const buildOrb = (
-      side: "left" | "right",
-      fillColor: string,
-      rimColor: string
-    ) => {
-      const orb = document.createElement("div");
-      Object.assign(orb.style, {
-        position: "fixed",
-        bottom: "clamp(10px, 1.6vmin, 18px)",
-        [side]: "clamp(10px, 1.6vmin, 18px)",
-        // Scales with screen — 84px on phones, up to 120px on desktop.
-        width: "clamp(84px, 12vmin, 120px)",
-        height: "clamp(84px, 12vmin, 120px)",
-        borderRadius: "50%",
-        background:
-          "radial-gradient(circle at 32% 28%, #4a3a30 0%, #1a0e08 60%, #050302 100%)",
-        border: `3px solid ${rimColor}`,
-        boxShadow:
-          `inset 0 0 10px rgba(0,0,0,0.8), 0 2px 14px rgba(0,0,0,0.6)`,
-        overflow: "hidden",
-        pointerEvents: "none",
-      } as CSSStyleDeclaration);
+    /* Bottom-centre vitals card — portrait + name/lv on the left, three
+     * horizontal bars (HP/MP/EXP) on the right. Replaces the two corner
+     * orbs so the most-watched info sits right under the player. */
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      position: "fixed",
+      // Sits above the joystick/action button row.
+      bottom: "clamp(12px, 1.8vmin, 22px)",
+      left: "50%",
+      transform: "translateX(-50%)",
+      width: "min(440px, 86vw)",
+      padding: "clamp(8px, 1.2vmin, 14px) clamp(12px, 1.6vmin, 18px)",
+      display: "grid",
+      gridTemplateColumns: "auto 1fr",
+      columnGap: "clamp(10px, 1.6vmin, 16px)",
+      alignItems: "center",
+      borderRadius: "10px",
+      background:
+        "linear-gradient(180deg, rgba(20,12,18,0.92), rgba(8,5,10,0.96))",
+      border: "1.5px solid rgba(200,152,52,0.55)",
+      boxShadow:
+        "0 10px 28px rgba(0,0,0,0.65), inset 0 0 14px rgba(0,0,0,0.7), inset 0 1px 0 rgba(252,209,64,0.18)",
+      pointerEvents: "none",
+      zIndex: "20",
+    } as CSSStyleDeclaration);
 
-      // Fill div fills from the bottom up
-      const fill = document.createElement("div");
-      Object.assign(fill.style, {
+    // Portrait + level pill (left column, stacked vertically)
+    const left = document.createElement("div");
+    Object.assign(left.style, {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "4px",
+    } as CSSStyleDeclaration);
+    const portrait = document.createElement("div");
+    Object.assign(portrait.style, {
+      width: "clamp(46px, 7vmin, 64px)",
+      height: "clamp(46px, 7vmin, 64px)",
+      borderRadius: "50%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: "clamp(22px, 4vmin, 32px)",
+      border: "2px solid #fde047",
+      background:
+        "radial-gradient(circle at 35% 30%, #3a2410 0%, #0b070d 75%)",
+      boxShadow:
+        "inset 0 0 10px rgba(0,0,0,0.7), 0 0 14px rgba(252,209,64,0.3)",
+      color: "#fff",
+      textShadow: "0 1px 3px #000",
+    } as CSSStyleDeclaration);
+    portrait.textContent = "⚔";
+    this.hudPortrait = portrait;
+    const lvPill = document.createElement("div");
+    Object.assign(lvPill.style, {
+      padding: "2px 8px",
+      borderRadius: "8px",
+      background: "rgba(0,0,0,0.65)",
+      border: "1px solid rgba(252,209,64,0.55)",
+      fontFamily: "var(--pr-display, monospace)",
+      fontSize: "clamp(9px, 1.3vmin, 12px)",
+      letterSpacing: "2px",
+      color: "#fde047",
+      fontWeight: "bold",
+    } as CSSStyleDeclaration);
+    lvPill.textContent = "Lv 1";
+    this.hudLvPill = lvPill;
+    left.append(portrait, lvPill);
+
+    // Right column: name/map row + three bars
+    const right = document.createElement("div");
+    Object.assign(right.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "clamp(4px, 0.6vmin, 7px)",
+      minWidth: "0",
+    } as CSSStyleDeclaration);
+
+    // Top row: character name (left) + map name (right)
+    const topRow = document.createElement("div");
+    Object.assign(topRow.style, {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "baseline",
+      gap: "8px",
+      marginBottom: "1px",
+    } as CSSStyleDeclaration);
+    const nameEl = document.createElement("div");
+    Object.assign(nameEl.style, {
+      fontFamily: "var(--pr-display, monospace)",
+      fontSize: "clamp(12px, 1.7vmin, 16px)",
+      letterSpacing: "2px",
+      color: "#fde047",
+      fontWeight: "bold",
+      textShadow: "0 0 8px rgba(252,209,64,0.4), 0 1px 2px #000",
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      flex: "1",
+    } as CSSStyleDeclaration);
+    nameEl.textContent = "—";
+    this.hudName = nameEl;
+    const mapEl = document.createElement("div");
+    Object.assign(mapEl.style, {
+      fontSize: "clamp(10px, 1.3vmin, 12px)",
+      letterSpacing: "1.5px",
+      color: "#cbd5e1",
+      whiteSpace: "nowrap",
+    } as CSSStyleDeclaration);
+    mapEl.textContent = "connecting…";
+    this.hudLabel = mapEl;
+    topRow.append(nameEl, mapEl);
+
+    // Bar factory: returns the fill + text refs we need.
+    const buildBar = (
+      rim: string,
+      fill: string,
+      glow: string,
+      heightVar: string
+    ) => {
+      const wrap = document.createElement("div");
+      Object.assign(wrap.style, {
+        position: "relative",
+        width: "100%",
+        height: heightVar,
+        borderRadius: "3px",
+        background: "rgba(0,0,0,0.7)",
+        border: `1px solid ${rim}`,
+        overflow: "hidden",
+        boxShadow:
+          "inset 0 1px 3px rgba(0,0,0,0.85), inset 0 -1px 0 rgba(255,255,255,0.04)",
+      } as CSSStyleDeclaration);
+      const f = document.createElement("div");
+      Object.assign(f.style, {
         position: "absolute",
         left: "0",
-        right: "0",
+        top: "0",
         bottom: "0",
-        height: "100%",
-        background: fillColor,
-        transition: "height 0.15s ease",
-        boxShadow: "inset 0 -10px 20px rgba(0,0,0,0.4)",
+        width: "0%",
+        background: fill,
+        transition: "width 220ms cubic-bezier(0.2, 0.9, 0.3, 1)",
+        boxShadow: `0 0 8px ${glow}, inset 0 1px 0 rgba(255,255,255,0.2)`,
       } as CSSStyleDeclaration);
-      // Specular highlight on top
-      const shine = document.createElement("div");
-      Object.assign(shine.style, {
-        position: "absolute",
-        top: "8%",
-        left: "20%",
-        width: "40%",
-        height: "20%",
-        borderRadius: "50%",
-        background:
-          "radial-gradient(ellipse, rgba(255,255,255,0.45), rgba(255,255,255,0) 70%)",
-        pointerEvents: "none",
-      } as CSSStyleDeclaration);
-      const text = document.createElement("span");
-      Object.assign(text.style, {
+      const t = document.createElement("span");
+      Object.assign(t.style, {
         position: "absolute",
         inset: "0",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         color: "#fff",
-        fontFamily: "monospace",
+        fontFamily: "var(--pr-display, monospace)",
+        fontSize: "clamp(10px, 1.35vmin, 13px)",
+        letterSpacing: "0.5px",
         fontWeight: "bold",
-        fontSize: "clamp(13px, 1.8vmin, 17px)",
-        textShadow: "0 1px 3px #000, 0 0 4px #000",
+        textShadow: "0 0 5px #000, 0 1px 2px #000",
         pointerEvents: "none",
       } as CSSStyleDeclaration);
-      orb.appendChild(fill);
-      orb.appendChild(shine);
-      orb.appendChild(text);
-      return { orb, fill, text };
+      wrap.append(f, t);
+      return { wrap, f, t };
     };
 
-    const hpOrb = buildOrb(
-      "left",
-      "linear-gradient(180deg, #b91c1c 0%, #7f1d1d 60%, #450a0a 100%)",
-      "rgba(220,38,38,0.7)"
+    const hp = buildBar(
+      "rgba(220,38,38,0.55)",
+      "linear-gradient(180deg, #fca5a5 0%, #dc2626 55%, #7f1d1d 100%)",
+      "rgba(220,38,38,0.55)",
+      "clamp(13px, 1.9vmin, 18px)"
     );
-    const mpOrb = buildOrb(
-      "right",
-      "linear-gradient(180deg, #2563eb 0%, #1e3a8a 60%, #0c1e4e 100%)",
-      "rgba(96,165,250,0.7)"
+    const mp = buildBar(
+      "rgba(96,165,250,0.55)",
+      "linear-gradient(180deg, #7dd3fc 0%, #2563eb 55%, #1e3a8a 100%)",
+      "rgba(96,165,250,0.5)",
+      "clamp(11px, 1.6vmin, 15px)"
     );
-    this.hudHpOrb = hpOrb.orb;
-    this.hudHpFillOrb = hpOrb.fill;
-    this.hudHpText = hpOrb.text;
-    this.hudMpOrb = mpOrb.orb;
-    this.hudMpFillOrb = mpOrb.fill;
-    this.hudMpText = mpOrb.text;
+    const exp = buildBar(
+      "rgba(250,204,21,0.45)",
+      "linear-gradient(90deg, #fde047, #facc15)",
+      "rgba(250,204,21,0.45)",
+      "clamp(6px, 1vmin, 10px)"
+    );
 
-    /* Center: Lv / EXP bar / Gold / Map name — sits between the two orbs at the bottom */
-    this.hudCenter = document.createElement("div");
-    Object.assign(this.hudCenter.style, {
-      position: "fixed",
-      bottom: "clamp(14px, 2vmin, 22px)",
-      // Leave room either side for the (now scalable) orbs
-      left: "clamp(108px, 14vmin, 150px)",
-      right: "clamp(108px, 14vmin, 150px)",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: "clamp(4px, 0.6vmin, 8px)",
-      pointerEvents: "none",
-    } as CSSStyleDeclaration);
+    // Reuse the old field names so the update path stays untouched
+    // — they all become horizontal-bar fills now.
+    this.hudHpFillOrb = hp.f;
+    this.hudHpText = hp.t;
+    this.hudMpFillOrb = mp.f;
+    this.hudMpText = mp.t;
+    this.hudExpFill = exp.f;
 
-    this.hudLabel = document.createElement("div");
-    Object.assign(this.hudLabel.style, {
-      background: "rgba(0,0,0,0.6)",
-      padding: "clamp(3px, 0.5vmin, 6px) clamp(10px, 1.4vmin, 16px)",
-      borderRadius: "4px",
-      border: "1px solid rgba(255,255,255,0.15)",
-      fontSize: "clamp(11px, 1.5vmin, 14px)",
-      letterSpacing: "1px",
-    } as CSSStyleDeclaration);
-    this.hudLabel.textContent = "connecting…";
+    right.append(topRow, hp.wrap, mp.wrap, exp.wrap);
 
-    const expBarWrap = document.createElement("div");
-    Object.assign(expBarWrap.style, {
-      position: "relative",
-      width: "min(280px, 60vw)",
-      height: "clamp(8px, 1.2vmin, 12px)",
-      background: "rgba(0,0,0,0.6)",
-      borderRadius: "4px",
-      border: "1px solid rgba(255,255,255,0.15)",
-      overflow: "hidden",
-    } as CSSStyleDeclaration);
-    const expFill = document.createElement("div");
-    Object.assign(expFill.style, {
-      position: "absolute",
-      left: "0",
-      top: "0",
-      bottom: "0",
-      width: "0%",
-      background: "linear-gradient(90deg, #facc15, #fde047)",
-      transition: "width 0.2s ease",
-    } as CSSStyleDeclaration);
-    expBarWrap.appendChild(expFill);
-    this.hudExpFill = expFill;
-
-    this.hudStats = document.createElement("div");
-    Object.assign(this.hudStats.style, {
-      background: "rgba(0,0,0,0.5)",
-      padding: "clamp(3px, 0.5vmin, 6px) clamp(10px, 1.4vmin, 16px)",
-      borderRadius: "4px",
-      fontSize: "clamp(11px, 1.5vmin, 14px)",
-    } as CSSStyleDeclaration);
-    const statsLine = document.createElement("div");
-    statsLine.id = "stats-line";
-    this.hudStats.appendChild(statsLine);
-
-    this.hudCenter.appendChild(this.hudLabel);
-    this.hudCenter.appendChild(expBarWrap);
-    this.hudCenter.appendChild(this.hudStats);
-
-    document.body.appendChild(this.hudHpOrb);
-    document.body.appendChild(this.hudMpOrb);
-    document.body.appendChild(this.hudCenter);
+    card.append(left, right);
+    this.hudCenter = card;
+    document.body.appendChild(card);
   }
 
   private tearDownHud() {
@@ -824,10 +868,11 @@ export class WorldScene extends Phaser.Scene {
 
     if (this.hudLabel) {
       const mapName = this.currentMap ? MAP_LABELS[this.currentMap] : "…";
-      const visibleCount = Array.from(this.sprites.values()).filter(
-        (s) => s.mapId === this.currentMap
-      ).length;
-      this.hudLabel.textContent = `${mapName}  ·  players here: ${visibleCount}`;
+      // Compact gold + potions + map name on the right of the top row.
+      this.hudLabel.innerHTML =
+        `<span style="color:#fde047">${me.gold}g</span>` +
+        `  <span style="color:#fca5a5">🧪${me.potions}</span>` +
+        `  <span style="color:#cbd5e1">${mapName}</span>`;
     }
 
     // Active shrine buff indicator
@@ -1068,17 +1113,29 @@ export class WorldScene extends Phaser.Scene {
       this.skillBtn = undefined;
     }
 
-    // HP orb
+    // HP bar — width-based now (horizontal layout)
     if (this.hudHpFillOrb && this.hudHpText) {
       const pct = Math.max(0, (me.hp / me.maxHp) * 100);
-      this.hudHpFillOrb.style.height = `${pct}%`;
-      this.hudHpText.textContent = `${Math.ceil(me.hp)}/${me.maxHp}`;
+      this.hudHpFillOrb.style.width = `${pct}%`;
+      this.hudHpText.textContent = `HP  ${Math.ceil(me.hp)} / ${me.maxHp}`;
     }
-    // MP orb
+    // MP bar
     if (this.hudMpFillOrb && this.hudMpText) {
       const pct = Math.max(0, (me.mp / me.maxMp) * 100);
-      this.hudMpFillOrb.style.height = `${pct}%`;
-      this.hudMpText.textContent = `${Math.floor(me.mp)}/${me.maxMp}`;
+      this.hudMpFillOrb.style.width = `${pct}%`;
+      this.hudMpText.textContent = `MP  ${Math.floor(me.mp)} / ${me.maxMp}`;
+    }
+    // Name + level pill + class portrait
+    if (this.hudName) this.hudName.textContent = me.name ?? "—";
+    if (this.hudLvPill) this.hudLvPill.textContent = `Lv ${me.level}`;
+    if (this.hudPortrait) {
+      const classId = me.classId as string | undefined;
+      const iconMap: Record<string, string> = {
+        warrior: "⚔",
+        mage: "🔮",
+        ranger: "🏹",
+      };
+      this.hudPortrait.textContent = iconMap[classId ?? ""] ?? "⚔";
     }
     if (this.hudExpFill) {
       const need = expToNextLevel(me.level);
