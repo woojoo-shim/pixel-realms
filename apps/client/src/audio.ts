@@ -1,13 +1,21 @@
 /**
- * Lightweight SFX layer.
+ * Synthesised SFX.
  *
- * All sounds are synthesised on demand with Web Audio (no asset files
- * to download). Each `audio.play(kind)` call is a one-shot effect; we
- * never hold buffers, so the GC handles cleanup automatically.
+ * Design goals (post-cleanup):
+ *  - No noise-heavy "whoosh / crunch" textures; everything is tonal so
+ *    rapid hits don't pile up into mush.
+ *  - Pentatonic / major-triad pitch palette → never sours when many
+ *    sounds overlap.
+ *  - Combo-aware: attack + hit accept an opt-in `combo` step (1-3) and
+ *    pitch the note up the C-major triad (C5 / E5 / G5). Step 3 gets a
+ *    bright "bell" shimmer on top so the finisher is unambiguous.
+ *  - Tight envelopes (50-200 ms) — sounds end before the next one
+ *    starts, so the chain reads as rhythm, not chaos.
  *
- * The browser autoplay policy means the AudioContext starts suspended.
- * Call `audio.unlock()` after any user gesture (click / keydown / tap)
- * to resume it — until that happens, play() is a no-op.
+ * Autoplay policy:
+ *   AudioContext begins suspended. `audio.unlock()` must be called from
+ *   a user gesture (first pointerdown / keydown). Until then play() is
+ *   a silent no-op, so calls are always safe.
  */
 
 export type SfxKind =
@@ -25,10 +33,15 @@ export type SfxKind =
   | "heal"
   | "ui-click";
 
+export interface PlayOpts {
+  /** Melee combo step (1-3). Steps progress C5 → E5 → G5. */
+  combo?: 1 | 2 | 3;
+}
+
 class AudioManager {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private masterVolume = 0.4;
+  private masterVolume = 0.35;
   private muted = false;
 
   private ensureCtx(): AudioContext | null {
@@ -58,15 +71,13 @@ class AudioManager {
 
   setMuted(m: boolean) {
     this.muted = m;
-    if (this.master)
-      this.master.gain.value = m ? 0 : this.masterVolume;
+    if (this.master) this.master.gain.value = m ? 0 : this.masterVolume;
   }
 
   isMuted() {
     return this.muted;
   }
 
-  /** Resume audio context after a user gesture. Safe to call repeatedly. */
   async unlock(): Promise<void> {
     const ctx = this.ensureCtx();
     if (!ctx) return;
@@ -74,13 +85,13 @@ class AudioManager {
       try {
         await ctx.resume();
       } catch {
-        /* ignore — some browsers reject silently */
+        /* some browsers reject silently */
       }
     }
   }
 
   /** Play a one-shot SFX. Synthesises and forgets — no preloading. */
-  play(kind: SfxKind) {
+  play(kind: SfxKind, opts?: PlayOpts) {
     const ctx = this.ensureCtx();
     if (!ctx || !this.master) return;
     if (this.muted) return;
@@ -88,53 +99,29 @@ class AudioManager {
     const t = ctx.currentTime;
     try {
       switch (kind) {
-        case "attack":   this.swoosh(ctx, t); break;
-        case "hit":      this.thud(ctx, t, 140, 0.22, 80); break;
+        case "attack":   this.attack(ctx, t, opts?.combo ?? 1); break;
+        case "hit":      this.hit(ctx, t, opts?.combo ?? 1); break;
         case "crit":     this.crit(ctx, t); break;
-        case "cast":     this.risingTone(ctx, t, 260, 760, 0.18, "sine"); break;
-        case "nova":     this.frostBoom(ctx, t); break;
-        case "chain":    this.electric(ctx, t); break;
+        case "cast":     this.cast(ctx, t); break;
+        case "nova":     this.nova(ctx, t); break;
+        case "chain":    this.chain(ctx, t); break;
         case "meteor":   this.meteor(ctx, t); break;
         case "teleport": this.teleport(ctx, t); break;
-        case "levelup":  this.fanfare(ctx, t); break;
-        case "death":    this.descending(ctx, t); break;
+        case "levelup":  this.levelup(ctx, t); break;
+        case "death":    this.death(ctx, t); break;
         case "pickup":   this.pickup(ctx, t); break;
         case "heal":     this.heal(ctx, t); break;
         case "ui-click": this.click(ctx, t); break;
       }
     } catch {
-      /* Don't ever let a sound crash the game */
+      /* never let SFX crash the game */
     }
   }
 
-  /* ── Synthesis primitives ────────────────────────────────────────── */
+  /* ── Primitives ──────────────────────────────────────────────────── */
 
-  private envelope(
-    ctx: AudioContext,
-    src: AudioNode,
-    t0: number,
-    peak: number,
-    attack: number,
-    release: number
-  ): GainNode {
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, t0);
-    g.gain.linearRampToValueAtTime(peak, t0 + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + release);
-    src.connect(g);
-    g.connect(this.master!);
-    return g;
-  }
-
-  private noiseBuffer(ctx: AudioContext, ms: number): AudioBuffer {
-    const len = Math.max(1, Math.floor(ctx.sampleRate * (ms / 1000)));
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-    return buf;
-  }
-
-  private tone(
+  /** Play a single clean note with an AD envelope. */
+  private note(
     ctx: AudioContext,
     t0: number,
     freq: number,
@@ -153,150 +140,125 @@ class AudioManager {
         t0 + attack + release
       );
     }
-    this.envelope(ctx, o, t0, peak, attack, release);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + release);
+    o.connect(g);
+    g.connect(this.master!);
     o.start(t0);
     o.stop(t0 + attack + release + 0.02);
   }
 
-  /* ── Per-effect synthesis ────────────────────────────────────────── */
+  /* ── Effects ─────────────────────────────────────────────────────── */
 
-  private swoosh(ctx: AudioContext, t: number) {
-    const ms = 90;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(ctx, ms);
-    const f = ctx.createBiquadFilter();
-    f.type = "lowpass";
-    f.frequency.setValueAtTime(2400, t);
-    f.frequency.exponentialRampToValueAtTime(400, t + ms / 1000);
-    src.connect(f);
-    this.envelope(ctx, f, t, 0.35, 0.005, ms / 1000);
-    src.start(t);
-    src.stop(t + ms / 1000 + 0.02);
+  /** Melee attack — short pluck. Pitch climbs through C5/E5/G5. */
+  private attack(ctx: AudioContext, t: number, combo: 1 | 2 | 3) {
+    // Major triad: C5 ≈ 523.25, E5 ≈ 659.25, G5 ≈ 783.99
+    const f = combo === 1 ? 523.25 : combo === 2 ? 659.25 : 783.99;
+    const peak = combo === 3 ? 0.28 : 0.22;
+    // Soft triangle pluck with a quick downward sweep — feels physical
+    // without resorting to noise.
+    this.note(ctx, t, f, "triangle", peak, 0.004, 0.07, f * 0.75);
+    // Tiny breath of higher sine on top — adds an airy "swish".
+    this.note(ctx, t, f * 2.5, "sine", 0.08, 0.005, 0.06, f * 1.8);
+    if (combo === 3) {
+      // Finisher: bright bell shimmer that lifts the third note above
+      // the other two without colliding with the same fundamental.
+      this.note(ctx, t + 0.02, f * 3, "sine", 0.18, 0.004, 0.22);
+    }
   }
 
-  private thud(
-    ctx: AudioContext,
-    t: number,
-    freq: number,
-    peak: number,
-    ms: number
-  ) {
-    // Sub bump
-    this.tone(ctx, t, freq, "triangle", peak, 0.003, ms / 1000, freq * 0.4);
-    // Crackle layer
-    const noise = ctx.createBufferSource();
-    noise.buffer = this.noiseBuffer(ctx, ms);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 600;
-    noise.connect(lp);
-    this.envelope(ctx, lp, t, peak * 0.55, 0.003, (ms / 1000) * 0.7);
-    noise.start(t);
-    noise.stop(t + ms / 1000 + 0.02);
+  /** Melee hit landing on a target. Same triad pitch as the swing. */
+  private hit(ctx: AudioContext, t: number, combo: 1 | 2 | 3) {
+    const f = combo === 1 ? 523.25 : combo === 2 ? 659.25 : 783.99;
+    const peak = combo === 3 ? 0.34 : 0.26;
+    // Triangle sub for body
+    this.note(ctx, t, f, "triangle", peak, 0.002, 0.11, f * 0.6);
+    // Sine harmonic for the "ping" of impact
+    this.note(ctx, t, f * 2, "sine", peak * 0.55, 0.002, 0.09);
+    if (combo === 3) {
+      // Finisher chime — a stacked perfect-fifth bell that resolves up.
+      this.note(ctx, t + 0.01, f * 2, "sine", 0.22, 0.005, 0.32);
+      this.note(ctx, t + 0.01, f * 3, "sine", 0.14, 0.005, 0.4);
+    }
   }
 
+  /** Critical hit — bright bell stack, fifth + octave + sparkle. */
   private crit(ctx: AudioContext, t: number) {
-    this.thud(ctx, t, 220, 0.32, 110);
-    this.tone(ctx, t + 0.015, 880, "square", 0.18, 0.005, 0.09, 440);
+    // Bright stacked bell — pure sines, no noise.
+    this.note(ctx, t, 880, "sine", 0.3, 0.003, 0.22);
+    this.note(ctx, t, 1318.5, "sine", 0.2, 0.003, 0.28);
+    this.note(ctx, t + 0.015, 1760, "sine", 0.15, 0.003, 0.18);
   }
 
-  private risingTone(
-    ctx: AudioContext,
-    t: number,
-    fromHz: number,
-    toHz: number,
-    peak: number,
-    type: OscillatorType
-  ) {
-    this.tone(ctx, t, fromHz, type, peak, 0.01, 0.16, toHz);
+  /** Fire Bolt cast — quick pitched pluck. */
+  private cast(ctx: AudioContext, t: number) {
+    // Clean rising sine, no noise. Major-second leap for a "spell" feel.
+    this.note(ctx, t, 587.33, "sine", 0.22, 0.008, 0.18, 880);
+    this.note(ctx, t, 1175, "sine", 0.1, 0.008, 0.16, 1760);
   }
 
-  private frostBoom(ctx: AudioContext, t: number) {
-    // White-ish noise with a hard low-pass sweep down for the icy "whump"
-    const ms = 280;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(ctx, ms);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(3200, t);
-    lp.frequency.exponentialRampToValueAtTime(220, t + ms / 1000);
-    src.connect(lp);
-    this.envelope(ctx, lp, t, 0.45, 0.005, ms / 1000);
-    src.start(t);
-    src.stop(t + ms / 1000 + 0.02);
-    // Sub thump
-    this.tone(ctx, t, 90, "sine", 0.4, 0.005, 0.18, 50);
+  /** Frost Nova — single soft sub-bell descending. */
+  private nova(ctx: AudioContext, t: number) {
+    // No noise sweep — a cool descending bell stack.
+    this.note(ctx, t, 660, "sine", 0.3, 0.006, 0.3, 220);
+    this.note(ctx, t, 990, "sine", 0.15, 0.006, 0.32, 330);
   }
 
-  private electric(ctx: AudioContext, t: number) {
-    // Bandpassed noise — quick chirp at high frequency that dives
-    const ms = 220;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(ctx, ms);
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.setValueAtTime(2400, t);
-    bp.Q.value = 6;
-    bp.frequency.exponentialRampToValueAtTime(900, t + ms / 1000);
-    src.connect(bp);
-    this.envelope(ctx, bp, t, 0.55, 0.005, ms / 1000);
-    src.start(t);
-    src.stop(t + ms / 1000 + 0.02);
-    // Square layer for the "crackle"
-    this.tone(ctx, t, 1800, "square", 0.18, 0.005, 0.08, 1200);
-  }
-
-  private meteor(ctx: AudioContext, t: number) {
-    // Slow descending whoosh then a heavy thump
-    const ms = 420;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(ctx, ms);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(1800, t);
-    lp.frequency.exponentialRampToValueAtTime(180, t + ms / 1000);
-    src.connect(lp);
-    this.envelope(ctx, lp, t, 0.4, 0.05, ms / 1000);
-    src.start(t);
-    src.stop(t + ms / 1000 + 0.02);
-    this.thud(ctx, t + ms / 1000 - 0.05, 60, 0.55, 220);
-  }
-
-  private teleport(ctx: AudioContext, t: number) {
-    // Two short bursts: in (down sweep) + out (up sweep)
-    this.tone(ctx, t, 880, "sine", 0.22, 0.005, 0.08, 220);
-    this.tone(ctx, t + 0.07, 220, "sine", 0.22, 0.005, 0.1, 1100);
-  }
-
-  private fanfare(ctx: AudioContext, t: number) {
-    // C E G — major triad arpeggio
-    const notes = [523.25, 659.25, 783.99];
+  /** Chain Lightning — quick 3-note arpeggio (like sparks jumping). */
+  private chain(ctx: AudioContext, t: number) {
+    const notes = [880, 1174.7, 1568]; // A5, D6, G6 (perfect-fourth ladder)
     notes.forEach((f, i) =>
-      this.tone(ctx, t + i * 0.09, f, "triangle", 0.32, 0.01, 0.32)
+      this.note(ctx, t + i * 0.04, f, "sine", 0.22, 0.003, 0.12)
     );
-    // Bright bell on top
-    this.tone(ctx, t + 0.27, 1046.5, "sine", 0.25, 0.005, 0.5);
   }
 
-  private descending(ctx: AudioContext, t: number) {
-    this.tone(ctx, t, 320, "sawtooth", 0.35, 0.01, 0.55, 80);
-    this.tone(ctx, t, 220, "sine", 0.3, 0.02, 0.6, 60);
+  /** Meteor — slow descending bell into a low bloom. */
+  private meteor(ctx: AudioContext, t: number) {
+    // Long descending bell — anticipation
+    this.note(ctx, t, 880, "sine", 0.22, 0.04, 0.45, 220);
+    // Soft sub when it lands
+    this.note(ctx, t + 0.42, 110, "sine", 0.35, 0.02, 0.4, 60);
   }
 
+  /** Teleport — clean two-note "blink in / blink out". */
+  private teleport(ctx: AudioContext, t: number) {
+    this.note(ctx, t, 988, "sine", 0.22, 0.003, 0.1, 1568);
+    this.note(ctx, t + 0.06, 1568, "sine", 0.22, 0.003, 0.12, 660);
+  }
+
+  /** Level up — C E G C major chord arpeggio + bell crown. */
+  private levelup(ctx: AudioContext, t: number) {
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((f, i) =>
+      this.note(ctx, t + i * 0.085, f, "triangle", 0.3, 0.008, 0.34)
+    );
+    this.note(ctx, t + 0.34, 1568, "sine", 0.2, 0.005, 0.55);
+  }
+
+  /** Death — clean minor descending bell. */
+  private death(ctx: AudioContext, t: number) {
+    this.note(ctx, t, 392, "triangle", 0.3, 0.01, 0.55, 130);
+    this.note(ctx, t, 261.63, "sine", 0.18, 0.01, 0.6, 110);
+  }
+
+  /** Pickup — coin chirp, two crisp square notes. */
   private pickup(ctx: AudioContext, t: number) {
-    // Coin-ish two-note chirp
-    this.tone(ctx, t, 880, "square", 0.22, 0.003, 0.07);
-    this.tone(ctx, t + 0.06, 1318.5, "square", 0.22, 0.003, 0.1);
+    this.note(ctx, t, 988, "triangle", 0.22, 0.003, 0.08);
+    this.note(ctx, t + 0.06, 1318.5, "triangle", 0.22, 0.003, 0.12);
   }
 
+  /** Heal — gentle bell. */
   private heal(ctx: AudioContext, t: number) {
-    // Soft chime
-    this.tone(ctx, t, 660, "sine", 0.32, 0.005, 0.45);
-    this.tone(ctx, t, 990, "sine", 0.18, 0.005, 0.5);
+    this.note(ctx, t, 659.25, "sine", 0.3, 0.006, 0.4);
+    this.note(ctx, t, 988, "sine", 0.16, 0.006, 0.45);
+    this.note(ctx, t + 0.05, 1318.5, "sine", 0.1, 0.006, 0.4);
   }
 
+  /** UI click — quick polite blip. */
   private click(ctx: AudioContext, t: number) {
-    this.tone(ctx, t, 1100, "square", 0.18, 0.003, 0.05);
+    this.note(ctx, t, 1320, "sine", 0.15, 0.002, 0.05);
   }
 }
 

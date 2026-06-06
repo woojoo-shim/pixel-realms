@@ -631,9 +631,12 @@ export class WorldScene extends Phaser.Scene {
       });
 
       room.onMessage("fx:hit", (msg: FxHitPayload) => {
-        // Sound first so it lines up with the visual hitstop.
+        // Sound first so it lines up with the visual hitstop. Combo
+        // step pitches the hit note up the C/E/G triad — the chain
+        // reads as music.
         if (msg.target === "monster") {
-          audio.play(msg.crit ? "crit" : "hit");
+          if (msg.crit) audio.play("crit");
+          else audio.play("hit", { combo: msg.combo });
           if (msg.fatal) audio.play("death");
         } else if (msg.targetId === this.mySessionId) {
           audio.play("hit");
@@ -2137,7 +2140,7 @@ export class WorldScene extends Phaser.Scene {
             expireAt: now + COMBAT.COMBO_WINDOW_MS,
           });
           this.playSwingFx(s, player.dir as string, step);
-          audio.play("attack");
+          audio.play("attack", { combo: step });
         }
         s.prevHp = player.hp;
 
