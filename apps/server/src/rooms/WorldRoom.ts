@@ -46,12 +46,14 @@ import {
   QUESTS_BY_ID,
   questMatches,
   type FxQuestCompletePayload,
+  canEquip,
   INVENTORY,
   ITEMS,
   ItemDef,
   ItemRarity,
   ItemSlot,
   LOOT,
+  WEAPON_CLASS_LABEL,
   NETWORK,
   PLAYER,
   SPELLS,
@@ -1170,6 +1172,18 @@ export class WorldRoom extends Room<WorldState> {
     const inst = p.inventory[idx];
     const def = (ITEMS as Record<string, ItemDef>)[inst.itemId];
     if (!def) return;
+    // Enforce per-class weapon restriction. Only weapons block, so
+    // armor/rings always pass through.
+    if (!canEquip(p.classId, inst.itemId)) {
+      const client = this.clients.find((c) => c.sessionId === sessionId);
+      const w = def.weaponClass
+        ? WEAPON_CLASS_LABEL[def.weaponClass]
+        : "weapon";
+      client?.send("equip-error", {
+        reason: `이 ${w}은(는) 내 직업이 쓸 수 없어요.`,
+      });
+      return;
+    }
     const slot = def.slot;
     const prev = p.equipment.get(slot);
     // Remove from bag first.

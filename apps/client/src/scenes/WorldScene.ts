@@ -552,6 +552,10 @@ export class WorldScene extends Phaser.Scene {
       room.onMessage("auth-error", (msg: { reason: string }) => {
         alert(msg.reason ?? "Login failed.");
       });
+      room.onMessage("equip-error", (msg: { reason: string }) => {
+        // Inline floating toast — not blocking like alert().
+        this.showBriefToast(msg.reason ?? "장착 불가");
+      });
       room.onMessage("needs-character", (msg: { suggested?: string }) =>
         this.showCharacterCreateModal(room, msg?.suggested ?? "")
       );
@@ -1667,6 +1671,41 @@ export class WorldScene extends Phaser.Scene {
       ease: "Cubic.Out",
       onComplete: () => t.destroy(),
     });
+  }
+
+  /** Floating one-shot status toast (e.g., "can't equip"). */
+  private showBriefToast(text: string) {
+    const t = document.createElement("div");
+    t.textContent = text;
+    Object.assign(t.style, {
+      position: "fixed",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      padding: "10px 18px",
+      background: "linear-gradient(180deg, rgba(127,29,29,0.95), rgba(35,8,8,0.97))",
+      color: "#fde047",
+      fontFamily: "var(--pr-display, monospace)",
+      fontSize: "clamp(13px, 1.8vmin, 17px)",
+      fontWeight: "bold",
+      letterSpacing: "1.5px",
+      border: "2px solid rgba(252,165,165,0.7)",
+      borderRadius: "8px",
+      boxShadow: "0 10px 24px rgba(0,0,0,0.6)",
+      zIndex: "999",
+      pointerEvents: "none",
+      opacity: "0",
+      transition: "opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.3, 1)",
+    } as CSSStyleDeclaration);
+    document.body.appendChild(t);
+    requestAnimationFrame(() => {
+      t.style.opacity = "1";
+      t.style.transform = "translate(-50%, -54%)";
+    });
+    setTimeout(() => {
+      t.style.opacity = "0";
+      setTimeout(() => t.remove(), 240);
+    }, 1500);
   }
 
   /** Brief full-screen colored flash overlay. */
@@ -3326,6 +3365,7 @@ export class WorldScene extends Phaser.Scene {
 
   private refreshInventoryPanel(me: any) {
     if (!this.inventoryPanel) return;
+    this.inventoryPanel.setClassId(me.classId ?? "warrior");
     const items: InventoryItemView[] = [];
     me.inventory?.forEach?.((it: any) => {
       items.push({ id: it.id, itemId: it.itemId, rarity: it.rarity });

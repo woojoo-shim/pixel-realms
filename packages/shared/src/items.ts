@@ -24,6 +24,13 @@ export const RARITY = {
   } as Record<ItemRarity, string>,
 } as const;
 
+/**
+ * Weapon family. Each class can only equip one family — warriors swing
+ * swords, mages channel staves, rangers shoot bows. Armor + rings
+ * have no class restriction.
+ */
+export type WeaponClass = "sword" | "staff" | "bow";
+
 export interface ItemDef {
   id: string;
   name: string;
@@ -33,14 +40,33 @@ export interface ItemDef {
   color: number;
   /** Lowest monster level that can drop this item. */
   dropLevel: number;
+  /**
+   * Required for weapons, omitted on armor/rings. Restricts equip to
+   * matching class via CLASS_WEAPON.
+   */
+  weaponClass?: WeaponClass;
 }
 
+/** Which weapon family each class is allowed to wield. */
+export const CLASS_WEAPON: Record<"warrior" | "mage" | "ranger", WeaponClass> = {
+  warrior: "sword",
+  mage: "staff",
+  ranger: "bow",
+};
+
+export const WEAPON_CLASS_LABEL: Record<WeaponClass, string> = {
+  sword: "검",
+  staff: "지팡이",
+  bow: "활",
+};
+
 export const ITEMS = {
-  // ── Weapons ──────────────────────────────────────────────────────
+  // ── Swords (warrior only) ────────────────────────────────────────
   "wooden-sword": {
     id: "wooden-sword",
     name: "Wooden Sword",
     slot: "weapon",
+    weaponClass: "sword",
     stats: { damage: 2 },
     color: 0x8d6e63,
     dropLevel: 1,
@@ -49,6 +75,7 @@ export const ITEMS = {
     id: "iron-sword",
     name: "Iron Sword",
     slot: "weapon",
+    weaponClass: "sword",
     stats: { damage: 5 },
     color: 0xb0bec5,
     dropLevel: 3,
@@ -57,6 +84,7 @@ export const ITEMS = {
     id: "steel-blade",
     name: "Steel Blade",
     slot: "weapon",
+    weaponClass: "sword",
     stats: { damage: 8 },
     color: 0xeceff1,
     dropLevel: 5,
@@ -65,8 +93,83 @@ export const ITEMS = {
     id: "elven-edge",
     name: "Elven Edge",
     slot: "weapon",
+    weaponClass: "sword",
     stats: { damage: 11, speed: 8 },
     color: 0x84ffff,
+    dropLevel: 7,
+  },
+  // ── Staves (mage only) ───────────────────────────────────────────
+  "apprentice-staff": {
+    id: "apprentice-staff",
+    name: "Apprentice Staff",
+    slot: "weapon",
+    weaponClass: "staff",
+    stats: { damage: 1, maxMp: 6 },
+    color: 0x8d6e63,
+    dropLevel: 1,
+  },
+  "oak-rod": {
+    id: "oak-rod",
+    name: "Oak Rod",
+    slot: "weapon",
+    weaponClass: "staff",
+    stats: { damage: 3, maxMp: 14 },
+    color: 0x6d4c41,
+    dropLevel: 3,
+  },
+  "crystal-staff": {
+    id: "crystal-staff",
+    name: "Crystal Staff",
+    slot: "weapon",
+    weaponClass: "staff",
+    stats: { damage: 5, maxMp: 24 },
+    color: 0x60a5fa,
+    dropLevel: 5,
+  },
+  "archon-scepter": {
+    id: "archon-scepter",
+    name: "Archon Scepter",
+    slot: "weapon",
+    weaponClass: "staff",
+    stats: { damage: 8, maxMp: 36, maxHp: 10 },
+    color: 0xa78bfa,
+    dropLevel: 7,
+  },
+  // ── Bows (ranger only) ───────────────────────────────────────────
+  "hunting-bow": {
+    id: "hunting-bow",
+    name: "Hunting Bow",
+    slot: "weapon",
+    weaponClass: "bow",
+    stats: { damage: 2, speed: 4 },
+    color: 0x8d6e63,
+    dropLevel: 1,
+  },
+  "yew-longbow": {
+    id: "yew-longbow",
+    name: "Yew Longbow",
+    slot: "weapon",
+    weaponClass: "bow",
+    stats: { damage: 5, speed: 8 },
+    color: 0x6d4c41,
+    dropLevel: 3,
+  },
+  "silver-recurve": {
+    id: "silver-recurve",
+    name: "Silver Recurve",
+    slot: "weapon",
+    weaponClass: "bow",
+    stats: { damage: 8, speed: 12 },
+    color: 0xcbd5e1,
+    dropLevel: 5,
+  },
+  wraithstrike: {
+    id: "wraithstrike",
+    name: "Wraithstrike",
+    slot: "weapon",
+    weaponClass: "bow",
+    stats: { damage: 11, speed: 18 },
+    color: 0x34d399,
     dropLevel: 7,
   },
   // ── Head ─────────────────────────────────────────────────────────
@@ -239,6 +342,25 @@ export const VENDOR = {
   /** Extra gold per dropLevel above 1 (scales price with item tier). */
   SELL_LEVEL_BONUS: 4,
 } as const;
+
+/**
+ * Returns true when a character of `classId` is allowed to equip the
+ * given item. Non-weapons (head/chest/ring) are always allowed; weapons
+ * must match the class's allowed weaponClass.
+ */
+export function canEquip(
+  classId: string | undefined,
+  itemId: string
+): boolean {
+  const def = (ITEMS as Record<string, ItemDef>)[itemId];
+  if (!def) return false;
+  if (def.slot !== "weapon") return true;
+  if (!def.weaponClass) return true; // legacy items without restriction
+  const required = (CLASS_WEAPON as Record<string, WeaponClass | undefined>)[
+    classId ?? ""
+  ];
+  return required === def.weaponClass;
+}
 
 export function sellPriceFor(itemId: string, rarity: ItemRarity): number {
   const def = (ITEMS as Record<string, ItemDef>)[itemId];

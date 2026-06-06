@@ -10,6 +10,8 @@ import {
   INVENTORY,
   itemFullName,
   itemStats,
+  canEquip,
+  WEAPON_CLASS_LABEL,
 } from "@pr/shared";
 
 export interface InventoryItemView {
@@ -37,6 +39,8 @@ export class InventoryPanel {
   private pendingId: string | null = null;
   private inventory: InventoryItemView[] = [];
   private equipment: EquipmentView = {};
+  /** Owning character class — drives weapon-restriction rendering. */
+  private classId: string = "warrior";
 
   constructor() {
     const root = document.createElement("div");
@@ -171,6 +175,11 @@ export class InventoryPanel {
   }
   onDrop(cb: ActionCallback) {
     this.dropCb = cb;
+  }
+
+  /** Tell the panel which class owns it so weapon restrictions render correctly. */
+  setClassId(classId: string) {
+    this.classId = classId;
   }
 
   setInventory(items: InventoryItemView[]) {
@@ -327,6 +336,34 @@ export class InventoryPanel {
       textOverflow: "ellipsis",
     });
     cell.appendChild(nm);
+
+    // ── Weapon class lock — show on bag items the player can't use ──
+    if (!isEquipped && def.slot === "weapon" && def.weaponClass) {
+      if (!canEquip(this.classId, inst.itemId)) {
+        // Dim everything
+        icon.style.filter = "grayscale(0.8) brightness(0.55)";
+        nm.style.opacity = "0.55";
+        // Red diagonal "no" overlay
+        const lock = document.createElement("div");
+        Object.assign(lock.style, {
+          position: "absolute",
+          top: "2px",
+          right: "3px",
+          fontSize: "9px",
+          padding: "1px 4px",
+          borderRadius: "3px",
+          background: "rgba(127,29,29,0.92)",
+          color: "#fecaca",
+          letterSpacing: "0.5px",
+          border: "1px solid rgba(220,38,38,0.8)",
+          pointerEvents: "none",
+          fontWeight: "bold",
+        });
+        lock.textContent = WEAPON_CLASS_LABEL[def.weaponClass];
+        cell.appendChild(lock);
+        cell.style.cursor = "not-allowed";
+      }
+    }
 
     // Pending visual ring
     if (this.pendingId === inst.id) {
