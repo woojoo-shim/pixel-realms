@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { getStateCallbacks, type Room } from "colyseus.js";
+import { audio } from "../audio.js";
 import { joinWorld, type JoinMode } from "../net/room.js";
 import {
   InputMessage,
@@ -275,6 +276,21 @@ export class WorldScene extends Phaser.Scene {
   }
 
   async create() {
+    // Browser autoplay policy: AudioContext starts suspended. Resume it
+    // after any user gesture (first tap / click / key). Persisted mute
+    // pref carries across sessions.
+    try {
+      const savedMute = localStorage.getItem("pr:muted");
+      if (savedMute === "1") audio.setMuted(true);
+    } catch {
+      /* localStorage may be blocked — non-fatal */
+    }
+    const unlock = () => {
+      void audio.unlock();
+    };
+    window.addEventListener("pointerdown", unlock, { once: true, passive: true });
+    window.addEventListener("keydown", unlock, { once: true });
+
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
       this.wasd = {
@@ -483,6 +499,35 @@ export class WorldScene extends Phaser.Scene {
     document.body.appendChild(bagBtn);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => bagBtn.remove());
 
+    // Sound toggle — sits next to the bag button, persists across sessions.
+    const muteBtn = document.createElement("button");
+    muteBtn.type = "button";
+    muteBtn.className = "pr-btn pr-icon-btn";
+    muteBtn.title = "Sound";
+    Object.assign(muteBtn.style, {
+      position: "fixed",
+      top: "clamp(8px, 1.4vmin, 18px)",
+      left: "calc(50% + clamp(124px, 22vmin, 200px))",
+    } as CSSStyleDeclaration);
+    const refreshMuteIcon = () => {
+      muteBtn.textContent = audio.isMuted() ? "🔇" : "🔊";
+    };
+    refreshMuteIcon();
+    muteBtn.addEventListener("click", () => {
+      audio.setMuted(!audio.isMuted());
+      try {
+        localStorage.setItem("pr:muted", audio.isMuted() ? "1" : "0");
+      } catch {
+        /* non-fatal */
+      }
+      refreshMuteIcon();
+      // Clicking the toggle is itself a gesture — unlock the context.
+      void audio.unlock();
+      if (!audio.isMuted()) audio.play("ui-click");
+    });
+    document.body.appendChild(muteBtn);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => muteBtn.remove());
+
     // Vignette — subtle corner shading. Heavy alpha-blended overlay
     // costs a lot on mobile GPUs (full-screen rebleed every frame), so
     // we skip it on touch devices.
@@ -585,23 +630,44 @@ export class WorldScene extends Phaser.Scene {
         }
       });
 
-      room.onMessage("fx:hit", (msg: FxHitPayload) => this.showHitFx(msg));
-      room.onMessage("fx:levelup", (msg: FxLevelUpPayload) =>
-        this.showLevelUpFx(msg)
-      );
-      room.onMessage("fx:pickup", (msg: FxPickupPayload) =>
-        this.showPickupFx(msg)
-      );
+      room.onMessage("fx:hit", (msg: FxHitPayload) => {
+        // Sound first so it lines up with the visual hitstop.
+        if (msg.target === "monster") {
+          audio.play(msg.crit ? "crit" : "hit");
+          if (msg.fatal) audio.play("death");
+        } else if (msg.targetId === this.mySessionId) {
+          audio.play("hit");
+          if (msg.fatal) audio.play("death");
+        }
+        this.showHitFx(msg);
+      });
+      room.onMessage("fx:levelup", (msg: FxLevelUpPayload) => {
+        if (msg.sessionId === this.mySessionId) audio.play("levelup");
+        this.showLevelUpFx(msg);
+      });
+      room.onMessage("fx:pickup", (msg: FxPickupPayload) => {
+        if (msg.sessionId === this.mySessionId) audio.play("pickup");
+        this.showPickupFx(msg);
+      });
       room.onMessage(
         "fx:heal",
-        (msg: { sessionId: string; amount: number; x: number; y: number }) =>
-          this.showHealFx(msg)
+        (msg: { sessionId: string; amount: number; x: number; y: number }) => {
+          if (msg.sessionId === this.mySessionId) audio.play("heal");
+          this.showHealFx(msg);
+        }
       );
-      room.onMessage("fx:cast", (msg: FxCastPayload) => this.showCastFx(msg));
-      room.onMessage("fx:nova", (msg: FxNovaPayload) => this.showNovaFx(msg));
-      room.onMessage("fx:chain", (msg: FxChainPayload) =>
-        this.showChainFx(msg)
-      );
+      room.onMessage("fx:cast", (msg: FxCastPayload) => {
+        audio.play("cast");
+        this.showCastFx(msg);
+      });
+      room.onMessage("fx:nova", (msg: FxNovaPayload) => {
+        audio.play("nova");
+        this.showNovaFx(msg);
+      });
+      room.onMessage("fx:chain", (msg: FxChainPayload) => {
+        audio.play("chain");
+        this.showChainFx(msg);
+      });
       room.onMessage("fx:shrine", (msg: FxShrinePayload) =>
         this.showShrineActivateFx(msg)
       );
@@ -611,12 +677,14 @@ export class WorldScene extends Phaser.Scene {
       room.onMessage("fx:quest-complete", (msg: FxQuestCompletePayload) =>
         this.showQuestCompleteFx(msg)
       );
-      room.onMessage("fx:teleport", (msg: FxTeleportPayload) =>
-        this.showTeleportFx(msg)
-      );
-      room.onMessage("fx:meteor-warning", (msg: FxMeteorWarningPayload) =>
-        this.showMeteorWarningFx(msg)
-      );
+      room.onMessage("fx:teleport", (msg: FxTeleportPayload) => {
+        audio.play("teleport");
+        this.showTeleportFx(msg);
+      });
+      room.onMessage("fx:meteor-warning", (msg: FxMeteorWarningPayload) => {
+        audio.play("meteor");
+        this.showMeteorWarningFx(msg);
+      });
       room.onMessage("fx:meteor-impact", (msg: FxMeteorImpactPayload) =>
         this.showMeteorImpactFx(msg)
       );
@@ -2069,6 +2137,7 @@ export class WorldScene extends Phaser.Scene {
             expireAt: now + COMBAT.COMBO_WINDOW_MS,
           });
           this.playSwingFx(s, player.dir as string, step);
+          audio.play("attack");
         }
         s.prevHp = player.hp;
 
