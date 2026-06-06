@@ -187,6 +187,8 @@ export class WorldScene extends Phaser.Scene {
   /** Local mirror of the server combo step (1-3, 0 = idle). */
   private localComboStep = 0;
   private comboExpireAt = 0;
+  /** Per-remote-player combo prediction so we pick the right swing motion. */
+  private remoteCombo = new Map<string, { step: number; expireAt: number }>();
   /** Vignette overlay following the camera. */
   private vignette?: Phaser.GameObjects.Image;
 
@@ -1975,7 +1977,19 @@ export class WorldScene extends Phaser.Scene {
         // Detect new attack
         if (player.attackUntil > s.prevAttackUntil) {
           s.prevAttackUntil = player.attackUntil;
-          this.playSwingFx(s, player.dir as string);
+          // Mirror the server's combo cadence locally so each swing
+          // gets the right motion variant (light → follow-up → finisher).
+          const now = performance.now();
+          const last = this.remoteCombo.get(sessionId);
+          let step: 1 | 2 | 3 = 1;
+          if (last && now < last.expireAt && last.step >= 1 && last.step < 3) {
+            step = (last.step + 1) as 2 | 3;
+          }
+          this.remoteCombo.set(sessionId, {
+            step,
+            expireAt: now + COMBAT.COMBO_WINDOW_MS,
+          });
+          this.playSwingFx(s, player.dir as string, step);
         }
         s.prevHp = player.hp;
 
@@ -2280,35 +2294,104 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /** Visual arc in front of the attacking player. */
-  private playSwingFx(remote: RemoteSprite, dir: string) {
-    let ang = 0;
-    let dx = 0, dy = 0;
+  private playSwingFx(
+    remote: RemoteSprite,
+    dir: string,
+    step: 1 | 2 | 3 = 1
+  ) {
+    let baseAng = 0;
+    let dx = 0,
+      dy = 0;
     switch (dir) {
-      case "right": ang = 0; dx = 1; break;
-      case "down":  ang = Math.PI / 2; dy = 1; break;
-      case "left":  ang = Math.PI; dx = -1; break;
-      case "up":    ang = -Math.PI / 2; dy = -1; break;
+      case "right": baseAng = 0; dx = 1; break;
+      case "down":  baseAng = Math.PI / 2; dy = 1; break;
+      case "left":  baseAng = Math.PI; dx = -1; break;
+      case "up":    baseAng = -Math.PI / 2; dy = -1; break;
     }
     const r = COMBAT.ATTACK_RANGE;
-    const span = Math.PI / 1.7; // wider, more dramatic arc
-    const dur = COMBAT.ATTACK_SWING_MS;
+    const baseDur = COMBAT.ATTACK_SWING_MS;
     const cx = remote.sprite.x;
     const cy0 = remote.sprite.y;
     const cy = cy0 - 12;
 
-    // 1) Sprite squash: punch toward target then snap back.
-    //    We use position tween + scale tween in parallel.
+    /* ── Per-step visual config ─────────────────────────────────────
+     *  Each combo step has a distinct motion so the chain reads as
+     *  three different swings, not three identical ones.
+     *
+     *   Step 1 — quick top-down slash, cool white-cyan, snappy
+     *   Step 2 — wider bottom-up slash, warm cream, mirrored direction
+     *   Step 3 — wide overhead cross-slash, gold, double-arc finisher
+     */
+    type Variant = {
+      span: number;            // arc width (radians)
+      angOffset: number;       // sweep centre offset from facing
+      direction: 1 | -1;       // 1 = CW sweep, -1 = CCW
+      durMul: number;          // duration multiplier vs base
+      rMul: number;            // reach multiplier
+      core: number;            // hottest colour at leading edge
+      mid: number;             // mid crescent colour
+      trail: number;           // faint trail colour
+      thrust: number;          // sprite thrust pixels
+      squash: number;          // sprite squash (1+x on scaleX)
+      double?: boolean;        // draw a mirrored second arc (cross)
+    };
+    const VAR: Record<1 | 2 | 3, Variant> = {
+      1: {
+        span: Math.PI / 2.2,
+        angOffset: -Math.PI / 8,
+        direction: 1,
+        durMul: 0.78,
+        rMul: 0.95,
+        core: 0xffffff,
+        mid: 0xe0f7ff,
+        trail: 0xbfdbfe,
+        thrust: 3,
+        squash: 0.14,
+      },
+      2: {
+        span: Math.PI / 1.9,
+        angOffset: Math.PI / 8,
+        direction: -1,
+        durMul: 0.92,
+        rMul: 1.0,
+        core: 0xffffff,
+        mid: 0xfff7d6,
+        trail: 0xfde68a,
+        thrust: 4,
+        squash: 0.16,
+      },
+      3: {
+        span: Math.PI / 1.45,
+        angOffset: 0,
+        direction: 1,
+        durMul: 1.25,
+        rMul: 1.18,
+        core: 0xffffff,
+        mid: 0xfde047,
+        trail: 0xfb923c,
+        thrust: 7,
+        squash: 0.28,
+        double: true,
+      },
+    };
+    const v = VAR[step];
+    const dur = baseDur * v.durMul;
+    const reach = r * v.rMul;
+    const span = v.span;
+    const centre = baseAng + v.angOffset;
+
+    /* 1) Sprite squash + thrust toward the target. Step 3 leaves further. */
     const origScaleX = remote.sprite.scaleX;
     const origScaleY = remote.sprite.scaleY;
     const origX = remote.sprite.x;
     const origY = remote.sprite.y;
     this.tweens.add({
       targets: remote.sprite,
-      x: origX + dx * 4,
-      y: origY + dy * 4,
-      scaleX: origScaleX * 1.18,
-      scaleY: origScaleY * 0.88,
-      duration: dur * 0.28,
+      x: origX + dx * v.thrust,
+      y: origY + dy * v.thrust,
+      scaleX: origScaleX * (1 + v.squash),
+      scaleY: origScaleY * (1 - v.squash * 0.65),
+      duration: dur * 0.3,
       ease: "Cubic.easeOut",
       yoyo: true,
       onComplete: () => {
@@ -2318,63 +2401,93 @@ export class WorldScene extends Phaser.Scene {
       },
     });
 
-    // 2) Sweeping crescent — the arc itself moves through its span over
-    //    the swing duration. We redraw each frame using a tween proxy.
-    const g = this.add.graphics().setDepth(cy0 + 1);
-    const sweepWidth = span * 0.55; // bright leading-edge slice width
-    const phase = { t: -1 }; // -1 (start) → +1 (end of sweep)
-    this.tweens.add({
-      targets: phase,
-      t: 1,
-      duration: dur,
-      ease: "Cubic.easeOut",
-      onUpdate: () => {
-        const head = ang + (phase.t * span) / 2;
-        const tail = head - sweepWidth;
-        const alpha = Math.max(0, 1 - Math.abs(phase.t)); // peaks mid-swing
-        g.clear();
-        // Outer faint trail (full span the swing has covered)
-        g.fillStyle(0xfff3c4, 0.25 * alpha);
-        g.beginPath();
-        g.moveTo(cx, cy);
-        g.arc(cx, cy, r, ang - span / 2, head, false);
-        g.closePath();
-        g.fillPath();
-        // Leading-edge bright crescent
-        g.fillStyle(0xfffac9, 0.85 * alpha);
-        g.beginPath();
-        g.moveTo(cx, cy);
-        g.arc(cx, cy, r, tail, head, false);
-        g.closePath();
-        g.fillPath();
-        // Hot rim line at the very leading edge
-        g.lineStyle(2.5, 0xffffff, 0.95 * alpha);
-        g.beginPath();
-        g.arc(cx, cy, r, head - 0.05, head + 0.05, false);
-        g.strokePath();
-        // Tip sparkle following the blade
-        const tipX = cx + Math.cos(head) * r;
-        const tipY = cy + Math.sin(head) * r;
-        g.fillStyle(0xffffff, alpha);
-        g.fillCircle(tipX, tipY, 2.5);
-        g.fillStyle(0xfff7d6, 0.6 * alpha);
-        g.fillCircle(tipX, tipY, 5);
-      },
-      onComplete: () => g.destroy(),
-    });
+    /* 2) Sweeping crescent (one or two for the X finisher). */
+    const drawArc = (mirror: boolean) => {
+      const g = this.add.graphics().setDepth(cy0 + 1);
+      const sweepWidth = span * 0.5;
+      const phase = { t: -1 };
+      const dirSign = (mirror ? -1 : 1) * v.direction;
+      this.tweens.add({
+        targets: phase,
+        t: 1,
+        duration: dur,
+        ease: "Cubic.easeOut",
+        onUpdate: () => {
+          const head = centre + dirSign * (phase.t * span) / 2;
+          const tail = head - dirSign * sweepWidth;
+          const alpha = Math.max(0, 1 - Math.abs(phase.t));
+          g.clear();
+          // Trail (full area the blade has crossed so far)
+          g.fillStyle(v.trail, 0.22 * alpha);
+          g.beginPath();
+          g.moveTo(cx, cy);
+          const trailStart = centre - dirSign * span / 2;
+          g.arc(cx, cy, reach, trailStart, head, dirSign < 0);
+          g.closePath();
+          g.fillPath();
+          // Leading crescent
+          g.fillStyle(v.mid, 0.88 * alpha);
+          g.beginPath();
+          g.moveTo(cx, cy);
+          g.arc(cx, cy, reach, tail, head, dirSign < 0);
+          g.closePath();
+          g.fillPath();
+          // Hot rim
+          g.lineStyle(2.5, v.core, 0.95 * alpha);
+          g.beginPath();
+          g.arc(cx, cy, reach, head - 0.05, head + 0.05, false);
+          g.strokePath();
+          // Tip sparkle
+          const tipX = cx + Math.cos(head) * reach;
+          const tipY = cy + Math.sin(head) * reach;
+          g.fillStyle(v.core, alpha);
+          g.fillCircle(tipX, tipY, step === 3 ? 3.5 : 2.5);
+          g.fillStyle(v.mid, 0.6 * alpha);
+          g.fillCircle(tipX, tipY, step === 3 ? 7 : 5);
+        },
+        onComplete: () => g.destroy(),
+      });
+    };
+    drawArc(false);
+    if (v.double) {
+      // Small offset so the X doesn't fire on the same exact frame
+      this.time.delayedCall(Math.round(dur * 0.18), () => drawArc(true));
+    }
 
-    // 3) Quick anticipation flash at the player's chest
+    /* 3) Anticipation flash at the chest (bigger on finisher). */
     const flash = this.add.graphics().setDepth(cy0 + 1);
-    flash.fillStyle(0xffffff, 0.85);
-    flash.fillCircle(cx, cy, 6);
-    flash.fillStyle(0xfff7d6, 0.5);
-    flash.fillCircle(cx, cy, 12);
+    const flashR = step === 3 ? 9 : 6;
+    flash.fillStyle(0xffffff, step === 3 ? 1 : 0.85);
+    flash.fillCircle(cx, cy, flashR);
+    flash.fillStyle(v.mid, 0.55);
+    flash.fillCircle(cx, cy, flashR * 2);
     this.tweens.add({
       targets: flash,
       alpha: 0,
-      duration: dur * 0.5,
+      duration: dur * 0.55,
       onComplete: () => flash.destroy(),
     });
+
+    /* 4) Finisher: drop a brief gold radial pulse at the player's feet. */
+    if (step === 3) {
+      const pulse = this.add.graphics().setDepth(cy0 - 1);
+      const pTarget = { r: 4, a: 0.85 };
+      this.tweens.add({
+        targets: pTarget,
+        r: reach + 6,
+        a: 0,
+        duration: dur * 1.1,
+        ease: "Quad.Out",
+        onUpdate: () => {
+          pulse.clear();
+          pulse.fillStyle(v.mid, pTarget.a * 0.18);
+          pulse.fillCircle(cx, cy + 6, pTarget.r);
+          pulse.lineStyle(2, v.mid, pTarget.a);
+          pulse.strokeCircle(cx, cy + 6, pTarget.r);
+        },
+        onComplete: () => pulse.destroy(),
+      });
+    }
   }
 
   /* ──────────────────────────────────────────────────────────────── */
