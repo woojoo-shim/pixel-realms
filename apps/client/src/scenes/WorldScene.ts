@@ -1474,9 +1474,11 @@ export class WorldScene extends Phaser.Scene {
     } else {
       const s = this.sprites.get(msg.targetId);
       if (!s || s.mapId !== this.currentMap) return;
-      // Player got hit: red double-blink instead of a single white flash so
-      // the damage feels painful and stays readable on busy screens.
-      this.punchFlashRedDouble(s.sprite, msg.fatal ? 220 : 140);
+      // Player got hit: short white impact tint so the sprite stays
+      // readable, plus a red glow ring around the sprite for the "ouch"
+      // feel without painting the whole character solid red.
+      this.punchFlashWhite(s.sprite, 80);
+      this.showHurtGlow(s.sprite.x, s.sprite.y, msg.fatal ? 1.4 : 1);
       this.spritePunch(s.sprite, 1.18);
       this.spawnImpactBurst(msg.x, msg.y, !!msg.crit);
       if (msg.targetId === this.mySessionId) {
@@ -1502,28 +1504,38 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * Painful red double-blink for *player* hits. Two short pulses with
-   * a gap, so it reads as "ouch" (versus the single-frame white that
-   * monsters use). Fatal hits sustain longer.
+   * Quick red "ouch" glow ring drawn around the sprite — additive blend
+   * so it overlays the sprite without replacing its silhouette. Tracks
+   * the sprite for a couple of frames since the player may keep moving
+   * (or be knocked) during the flash.
    */
-  private punchFlashRedDouble(
-    sprite: Phaser.GameObjects.Image,
-    totalMs: number
+  private showHurtGlow(
+    spriteX: number,
+    spriteY: number,
+    intensity: number = 1
   ) {
-    const onMs = Math.max(48, Math.round(totalMs * 0.32));
-    const gapMs = Math.max(36, Math.round(totalMs * 0.18));
-    sprite.setTintFill(0xff2a2a);
-    this.time.delayedCall(onMs, () => {
-      sprite.clearTint();
-      this.time.delayedCall(gapMs, () => {
-        // Sprite might be gone (despawned) by the time the second pulse
-        // fires — guard with `active`.
-        if (!sprite.active) return;
-        sprite.setTintFill(0xff2a2a);
-        this.time.delayedCall(onMs, () => {
-          if (sprite.active) sprite.clearTint();
-        });
-      });
+    const g = this.add.graphics().setDepth(99998);
+    // Phaser Graphics doesn't expose blendMode directly, but additive
+    // blending makes the red read as light, not paint.
+    (g as unknown as { blendMode: number }).blendMode =
+      Phaser.BlendModes.ADD;
+    const start = { r: 10, a: 0.85 * intensity };
+    this.tweens.add({
+      targets: start,
+      r: 22 * intensity,
+      a: 0,
+      duration: 260,
+      ease: "Cubic.Out",
+      onUpdate: () => {
+        g.clear();
+        // Soft outer disc — the glow itself.
+        g.fillStyle(0xff2a2a, start.a * 0.45);
+        g.fillCircle(spriteX, spriteY - 12, start.r);
+        // Thin bright rim picks up the leading edge of the pulse.
+        g.lineStyle(2.5, 0xff7676, start.a);
+        g.strokeCircle(spriteX, spriteY - 12, start.r);
+      },
+      onComplete: () => g.destroy(),
     });
   }
 
