@@ -1474,7 +1474,9 @@ export class WorldScene extends Phaser.Scene {
     } else {
       const s = this.sprites.get(msg.targetId);
       if (!s || s.mapId !== this.currentMap) return;
-      this.punchFlashWhite(s.sprite, 90);
+      // Player got hit: red double-blink instead of a single white flash so
+      // the damage feels painful and stays readable on busy screens.
+      this.punchFlashRedDouble(s.sprite, msg.fatal ? 220 : 140);
       this.spritePunch(s.sprite, 1.18);
       this.spawnImpactBurst(msg.x, msg.y, !!msg.crit);
       if (msg.targetId === this.mySessionId) {
@@ -1497,6 +1499,32 @@ export class WorldScene extends Phaser.Scene {
   private punchFlashWhite(sprite: Phaser.GameObjects.Image, ms: number) {
     sprite.setTintFill(0xffffff);
     this.time.delayedCall(ms, () => sprite.clearTint());
+  }
+
+  /**
+   * Painful red double-blink for *player* hits. Two short pulses with
+   * a gap, so it reads as "ouch" (versus the single-frame white that
+   * monsters use). Fatal hits sustain longer.
+   */
+  private punchFlashRedDouble(
+    sprite: Phaser.GameObjects.Image,
+    totalMs: number
+  ) {
+    const onMs = Math.max(48, Math.round(totalMs * 0.32));
+    const gapMs = Math.max(36, Math.round(totalMs * 0.18));
+    sprite.setTintFill(0xff2a2a);
+    this.time.delayedCall(onMs, () => {
+      sprite.clearTint();
+      this.time.delayedCall(gapMs, () => {
+        // Sprite might be gone (despawned) by the time the second pulse
+        // fires — guard with `active`.
+        if (!sprite.active) return;
+        sprite.setTintFill(0xff2a2a);
+        this.time.delayedCall(onMs, () => {
+          if (sprite.active) sprite.clearTint();
+        });
+      });
+    });
   }
 
   /** Snappy scale punch on a sprite (yoyo back to original scale). */
