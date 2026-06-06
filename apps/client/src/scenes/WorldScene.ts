@@ -184,6 +184,9 @@ export class WorldScene extends Phaser.Scene {
   private nextMeteorAt = 0;
   private nextChainAt = 0;
   private gKey?: Phaser.Input.Keyboard.Key;
+  /** Local mirror of the server combo step (1-3, 0 = idle). */
+  private localComboStep = 0;
+  private comboExpireAt = 0;
   /** Vignette overlay following the camera. */
   private vignette?: Phaser.GameObjects.Image;
 
@@ -1440,6 +1443,7 @@ export class WorldScene extends Phaser.Scene {
       this.spawnImpactBurst(msg.x, msg.y, !!msg.crit);
 
       // 5) Camera + hitstop scaled by severity.
+      const finisher = msg.combo === 3;
       if (msg.fatal) {
         this.hitstop(110);
         this.cameras.main.shake(200, 0.012);
@@ -1449,9 +1453,18 @@ export class WorldScene extends Phaser.Scene {
         this.hitstop(55);
         this.cameras.main.shake(120, 0.008);
         this.flashScreen(0xffe4b5, 0.35, 60);
+      } else if (finisher) {
+        // 3rd-strike combo finisher: meaty thump even without crit.
+        this.hitstop(70);
+        this.cameras.main.shake(150, 0.0085);
+        this.flashScreen(0xffffff, 0.32, 70);
+        this.showFinisherRing(msg.x, msg.y);
       } else {
         this.cameras.main.shake(55, 0.0035);
       }
+
+      // 6) Combo counter pop above the target on every melee hit.
+      if (msg.combo) this.showComboNumber(msg.x, msg.y, msg.combo);
     } else {
       const s = this.sprites.get(msg.targetId);
       if (!s || s.mapId !== this.currentMap) return;
@@ -1601,6 +1614,57 @@ export class WorldScene extends Phaser.Scene {
         onComplete: () => shard.destroy(),
       });
     }
+  }
+
+  /** Big crisp shockwave ring on combo-finisher hits. */
+  private showFinisherRing(x: number, y: number) {
+    const ring = this.add.graphics().setDepth(99998);
+    const target = { r: 6, a: 1 };
+    this.tweens.add({
+      targets: target,
+      r: 48,
+      a: 0,
+      duration: 320,
+      ease: "Cubic.Out",
+      onUpdate: () => {
+        ring.clear();
+        ring.lineStyle(3.5, 0xffffff, target.a);
+        ring.strokeCircle(x, y, target.r);
+        ring.lineStyle(1.6, 0xfde047, target.a * 0.85);
+        ring.strokeCircle(x, y, target.r * 0.78);
+      },
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /** Floating "1 / 2 / 3!" combo number above the hit. */
+  private showComboNumber(x: number, y: number, step: 1 | 2 | 3) {
+    const text = step === 3 ? "3!" : String(step);
+    const color =
+      step === 3 ? "#fde047" : step === 2 ? "#fff7d6" : "#cbd5e1";
+    const size = step === 3 ? 22 : step === 2 ? 17 : 14;
+    const t = this.add
+      .text(x + 16, y - 4, text, {
+        fontFamily: "var(--pr-display, monospace)",
+        fontSize: `${size}px`,
+        color,
+        stroke: "#000",
+        strokeThickness: 4,
+        fontStyle: "bold",
+      })
+      .setDepth(99999)
+      .setOrigin(0.5, 1);
+    t.setScale(0.6);
+    this.tweens.add({
+      targets: t,
+      scaleX: { from: 0.6, to: step === 3 ? 1.25 : 1 },
+      scaleY: { from: 0.6, to: step === 3 ? 1.25 : 1 },
+      y: t.y - (step === 3 ? 18 : 12),
+      alpha: { from: 1, to: 0 },
+      duration: step === 3 ? 520 : 380,
+      ease: "Cubic.Out",
+      onComplete: () => t.destroy(),
+    });
   }
 
   /** Brief full-screen colored flash overlay. */
@@ -3931,7 +3995,14 @@ export class WorldScene extends Phaser.Scene {
       mouseLeft;
     if (wantAttack && now >= this.nextAttackAt) {
       this.sendAttack();
-      this.nextAttackAt = now + COMBAT.ATTACK_COOLDOWN_MS;
+      // Mirror server combo cadence so the player can chain steps 1 → 2 → 3
+      // without our send-rate becoming the bottleneck.
+      if (now > this.comboExpireAt) this.localComboStep = 0;
+      this.localComboStep = (this.localComboStep % 3) + 1;
+      this.comboExpireAt = now + COMBAT.COMBO_WINDOW_MS;
+      const stepIdx = this.localComboStep - 1;
+      const cdMult = COMBAT.COMBO_CD_MULT[stepIdx] ?? 1;
+      this.nextAttackAt = now + COMBAT.ATTACK_COOLDOWN_MS * cdMult;
     }
 
     // ── Hold-to-cast Fire Bolt — right click (no shift) ──────────────

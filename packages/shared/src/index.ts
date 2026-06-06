@@ -43,6 +43,12 @@ export const COMBAT = {
   ATTACK_COOLDOWN_MS: 420,
   /** Visual swing duration (ms). */
   ATTACK_SWING_MS: 240,
+  /** Window in ms within which a follow-up swing extends the combo. */
+  COMBO_WINDOW_MS: 1200,
+  /** Damage multiplier per combo step (index 0 = step 1). */
+  COMBO_DMG_MULT: [1.0, 1.18, 1.55] as const,
+  /** Cooldown multiplier per combo step — faster on 1-2, recovery on 3. */
+  COMBO_CD_MULT: [0.78, 0.78, 1.28] as const,
   /** Reach of a monster's attack (px) — how close it must be. */
   MONSTER_ATTACK_RANGE: 24,
   /** Cooldown between a single monster's attacks (ms). */
@@ -270,6 +276,8 @@ export interface FxHitPayload {
   fatal?: boolean;
   /** True when this was a critical hit. */
   crit?: boolean;
+  /** Melee combo step (1, 2, or 3). Only set on basic-attack hits. */
+  combo?: 1 | 2 | 3;
 }
 
 /** FX broadcast when a player levels up. */

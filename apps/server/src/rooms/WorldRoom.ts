@@ -219,6 +219,8 @@ export class WorldRoom extends Room<WorldState> {
   private monsterIdSeq = 0;
   /** Per-player attack cooldown timestamps (epoch ms). */
   private playerAttackCd = new Map<string, number>();
+  /** Melee combo state — step (0-2) + expiry timestamp. */
+  private playerCombo = new Map<string, { step: number; expireAt: number }>();
   /** Per-player spell cooldown timestamps (epoch ms). */
   private playerCastCd = new Map<string, number>();
   /** Per-player i-frames (epoch ms). */
@@ -917,7 +919,22 @@ export class WorldRoom extends Room<WorldState> {
     const now = Date.now();
     const cd = this.playerAttackCd.get(sessionId) ?? 0;
     if (now < cd) return;
-    this.playerAttackCd.set(sessionId, now + COMBAT.ATTACK_COOLDOWN_MS);
+
+    // ── Combo bookkeeping ──
+    // Advance to the next step if we're still inside the window,
+    // else reset to step 1. After step 3 we cycle back to step 1.
+    const prev = this.playerCombo.get(sessionId);
+    let step: 1 | 2 | 3 = 1;
+    if (prev && now < prev.expireAt && prev.step >= 1 && prev.step <= 2) {
+      step = (prev.step + 1) as 2 | 3;
+    }
+    const cdMult = COMBAT.COMBO_CD_MULT[step - 1] ?? 1;
+    const cooldown = COMBAT.ATTACK_COOLDOWN_MS * cdMult;
+    this.playerAttackCd.set(sessionId, now + cooldown);
+    this.playerCombo.set(sessionId, {
+      step,
+      expireAt: now + COMBAT.COMBO_WINDOW_MS,
+    });
     p.attackUntil = now + COMBAT.ATTACK_SWING_MS;
 
     // D2 hack-n-slash: auto-target NEAREST monster in any direction within reach.
@@ -946,10 +963,12 @@ export class WorldRoom extends Room<WorldState> {
     const critChance =
       LOOT.CRIT_CHANCE + ceLv * SKILL_EFFECT.criticalEye_critPct;
     const crit = Math.random() < critChance;
+    const comboMult = COMBAT.COMBO_DMG_MULT[step - 1] ?? 1;
     const baseDmg =
       (playerDamage(p.level, p.statStr) + equipBonus(p).damage) *
       (1 + psLv * SKILL_EFFECT.powerStrike_dmgPct) *
-      (buffActive(p, "damage") ? SHRINE.DAMAGE_MULT : 1);
+      (buffActive(p, "damage") ? SHRINE.DAMAGE_MULT : 1) *
+      comboMult;
     const dmg = baseDmg * (crit ? LOOT.CRIT_MULT : 1);
     hit.m.hp = Math.max(0, hit.m.hp - dmg);
     const fatal = hit.m.hp <= 0;
@@ -963,6 +982,7 @@ export class WorldRoom extends Room<WorldState> {
       targetId: hit.id,
       fatal,
       crit,
+      combo: step,
     } satisfies FxHitPayload);
 
     if (fatal) {
@@ -2098,6 +2118,7 @@ export class WorldRoom extends Room<WorldState> {
     this.inputs.delete(client.sessionId);
     this.portalCooldown.delete(client.sessionId);
     this.playerAttackCd.delete(client.sessionId);
+    this.playerCombo.delete(client.sessionId);
     this.playerCastCd.delete(client.sessionId);
     this.playerIFrames.delete(client.sessionId);
     // Drop monster aggro
