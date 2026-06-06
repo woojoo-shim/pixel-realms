@@ -1524,25 +1524,69 @@ export class WorldScene extends Phaser.Scene {
 
   /** Bright particle starburst at (x, y). */
   private spawnImpactBurst(x: number, y: number, crit: boolean) {
-    const n = crit ? 10 : 6;
-    const colorMain = crit ? 0xfde047 : 0xffe9b0;
-    const colorAccent = crit ? 0xfb923c : 0xfff7d6;
-    // Center flash
-    const center = this.add.graphics().setDepth(99998);
-    center.fillStyle(0xffffff, 0.95);
-    center.fillCircle(x, y, crit ? 6 : 4);
-    center.fillStyle(colorMain, 0.6);
-    center.fillCircle(x, y, crit ? 12 : 8);
+    // ── 1) Crisp white core flash (the "청아한" punch) ──
+    const core = this.add.graphics().setDepth(99999);
+    core.fillStyle(0xffffff, 1);
+    core.fillCircle(x, y, crit ? 8 : 5);
+    // Hot cyan-white halo for the clean/fresh feel
+    core.fillStyle(0xe0f7ff, 0.7);
+    core.fillCircle(x, y, crit ? 14 : 9);
     this.tweens.add({
-      targets: center,
+      targets: core,
       alpha: 0,
-      duration: 160,
-      onComplete: () => center.destroy(),
+      scaleX: 1.4,
+      scaleY: 1.4,
+      duration: 130,
+      ease: "Cubic.Out",
+      onComplete: () => core.destroy(),
     });
-    // Radiating shards
+
+    // ── 2) Crisp expanding white ring — clean, fast, transparent ──
+    const ring = this.add.graphics().setDepth(99998);
+    ring.lineStyle(2.5, 0xffffff, 1);
+    ring.strokeCircle(x, y, crit ? 8 : 5);
+    const targetR = crit ? 36 : 24;
+    this.tweens.add({
+      targets: { r: crit ? 8 : 5, a: 1 },
+      r: targetR,
+      a: 0,
+      duration: 240,
+      ease: "Cubic.Out",
+      onUpdate: (tw) => {
+        const o = tw.targets[0] as { r: number; a: number };
+        ring.clear();
+        ring.lineStyle(2.5, 0xffffff, o.a);
+        ring.strokeCircle(x, y, o.r);
+        ring.lineStyle(1, 0x7dd3fc, o.a * 0.6);
+        ring.strokeCircle(x, y, o.r * 0.8);
+      },
+      onComplete: () => ring.destroy(),
+    });
+
+    // ── 3) Cross-flash — 4-point star for that classic crisp anime hit ──
+    const cross = this.add.graphics().setDepth(99999);
+    const armLen = crit ? 18 : 12;
+    const armW = 1.6;
+    cross.fillStyle(0xffffff, 1);
+    cross.fillRect(x - armLen, y - armW / 2, armLen * 2, armW);
+    cross.fillRect(x - armW / 2, y - armLen, armW, armLen * 2);
+    this.tweens.add({
+      targets: cross,
+      alpha: 0,
+      scaleX: 1.4,
+      scaleY: 1.4,
+      duration: 110,
+      ease: "Quad.Out",
+      onComplete: () => cross.destroy(),
+    });
+
+    // ── 4) Radiating shards (kept, polished palette) ──
+    const n = crit ? 10 : 7;
+    const colorMain = crit ? 0xfde047 : 0xffffff;
+    const colorAccent = crit ? 0xfb923c : 0xe0f7ff;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + Math.random() * 0.3;
-      const dist = (crit ? 22 : 14) + Math.random() * 8;
+      const dist = (crit ? 26 : 18) + Math.random() * 10;
       const shard = this.add.graphics().setDepth(99998);
       const col = i % 2 === 0 ? colorMain : colorAccent;
       shard.fillStyle(col, 1);
@@ -1552,7 +1596,7 @@ export class WorldScene extends Phaser.Scene {
         x: shard.x + Math.cos(a) * dist,
         y: shard.y + Math.sin(a) * dist,
         alpha: 0,
-        duration: 280 + Math.random() * 120,
+        duration: 260 + Math.random() * 120,
         ease: "Cubic.Out",
         onComplete: () => shard.destroy(),
       });
