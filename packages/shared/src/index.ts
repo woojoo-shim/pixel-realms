@@ -40,15 +40,16 @@ export const COMBAT = {
   /** How far in front the player's melee swing reaches. */
   ATTACK_RANGE: 44,
   /** Cooldown between player attacks (ms). */
-  ATTACK_COOLDOWN_MS: 420,
+  ATTACK_COOLDOWN_MS: 360,
   /** Visual swing duration (ms). */
-  ATTACK_SWING_MS: 240,
+  ATTACK_SWING_MS: 200,
   /** Window in ms within which a follow-up swing extends the combo. */
-  COMBO_WINDOW_MS: 1200,
+  COMBO_WINDOW_MS: 1300,
   /** Damage multiplier per combo step (index 0 = step 1). */
   COMBO_DMG_MULT: [1.0, 1.18, 1.55] as const,
-  /** Cooldown multiplier per combo step — faster on 1-2, recovery on 3. */
-  COMBO_CD_MULT: [0.78, 0.78, 1.28] as const,
+  /** Cooldown multiplier per combo step — faster on 1-2, mild recovery on 3.
+   *  Tuned for a snappy 1-2-3 ≈ 220 / 220 / 380 ms cadence. */
+  COMBO_CD_MULT: [0.62, 0.62, 1.05] as const,
   /** Reach of a monster's attack (px) — how close it must be. */
   MONSTER_ATTACK_RANGE: 24,
   /** Cooldown between a single monster's attacks (ms). */

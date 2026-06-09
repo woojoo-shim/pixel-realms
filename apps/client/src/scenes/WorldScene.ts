@@ -1520,24 +1520,28 @@ export class WorldScene extends Phaser.Scene {
       this.spawnImpactBurst(msg.x, msg.y, !!msg.crit);
 
       // 5) Camera + hitstop scaled by severity.
+      // NOTE: hitstops freeze the whole simulation, so even 50 ms is the
+      // difference between "snappy" and "soggy". We keep them tiny —
+      // shake + flash carry the impact, hitstop just adds a microbeat.
       const finisher = msg.combo === 3;
       if (msg.fatal) {
-        this.hitstop(110);
-        this.cameras.main.shake(200, 0.012);
-        this.flashScreen(0xffffff, 0.55, 70);
+        this.hitstop(42);
+        this.cameras.main.shake(180, 0.012);
+        this.flashScreen(0xffffff, 0.55, 60);
         this.bumpKillStreak();
       } else if (msg.crit) {
-        this.hitstop(55);
-        this.cameras.main.shake(120, 0.008);
-        this.flashScreen(0xffe4b5, 0.35, 60);
+        this.hitstop(22);
+        this.cameras.main.shake(110, 0.008);
+        this.flashScreen(0xffe4b5, 0.35, 50);
       } else if (finisher) {
         // 3rd-strike combo finisher: meaty thump even without crit.
-        this.hitstop(70);
-        this.cameras.main.shake(150, 0.0085);
-        this.flashScreen(0xffffff, 0.32, 70);
+        this.hitstop(28);
+        this.cameras.main.shake(140, 0.0085);
+        this.flashScreen(0xffffff, 0.32, 60);
         this.showFinisherRing(msg.x, msg.y);
       } else {
-        this.cameras.main.shake(55, 0.0035);
+        // Light hits get NO hitstop — chain reads as continuous flow.
+        this.cameras.main.shake(45, 0.0033);
       }
 
       // 6) Combo counter pop above the target on every melee hit.
@@ -2113,7 +2117,9 @@ export class WorldScene extends Phaser.Scene {
       if (isMe) {
         if (this.maps) this.switchToMap(remote.mapId);
         this.cameras.main.centerOn(sprite.x, sprite.y);
-        this.cameras.main.startFollow(sprite, true, 0.18, 0.18);
+        // Tighter lerp — camera stays closer to the hero, world feels
+        // less laggy without snapping rigidly.
+        this.cameras.main.startFollow(sprite, true, 0.32, 0.32);
       }
 
       $(player).onChange(() => {
@@ -4187,7 +4193,9 @@ export class WorldScene extends Phaser.Scene {
   update(_t: number, dt: number) {
     const now = performance.now();
     const inTransition = now < this.mapTransitionUntil;
-    const t = inTransition ? 1 : Math.min(1, (dt / 1000) * 15);
+    // Snappier remote-sprite interpolation: 15 → 22 per second pulls
+    // sprites onto their target positions in ~3 frames instead of 5.
+    const t = inTransition ? 1 : Math.min(1, (dt / 1000) * 22);
     const dtSec = dt / 1000;
     this.bobClock += dtSec;
 
