@@ -389,20 +389,26 @@ export class WorldScene extends Phaser.Scene {
 
     this.miniMap = new MiniMap();
 
-    // Pain overlay — red radial-gradient vignette that flashes on hit
+    // Pain overlay — full-screen red vignette that flashes on hit.
+    // NOTE: previously used mixBlendMode: "screen" which only tints
+    // already-bright pixels — on the dark world that meant the red
+    // appeared as patches on torches / sprites instead of the whole
+    // viewport. Default blend mode applies a uniform overlay, exactly
+    // like the screen-edge damage effect in most action games.
     const hurt = document.createElement("div");
     Object.assign(hurt.style, {
       position: "fixed",
       inset: "0",
       pointerEvents: "none",
+      // Edges glow strongest, fading toward fully transparent center
+      // so the player can still see what's hitting them.
       background:
         "radial-gradient(ellipse at center," +
-        " rgba(255,0,0,0) 40%," +
-        " rgba(190,15,15,0.55) 78%," +
-        " rgba(120,0,0,0.85) 100%)",
+        " rgba(220,30,30,0) 35%," +
+        " rgba(200,20,20,0.55) 75%," +
+        " rgba(110,0,0,0.85) 100%)",
       opacity: "0",
       transition: "opacity 0.45s ease-out",
-      mixBlendMode: "screen",
       zIndex: "50",
     } as CSSStyleDeclaration);
     document.body.appendChild(hurt);
@@ -1523,25 +1529,26 @@ export class WorldScene extends Phaser.Scene {
       // NOTE: hitstops freeze the whole simulation, so even 50 ms is the
       // difference between "snappy" and "soggy". We keep them tiny —
       // shake + flash carry the impact, hitstop just adds a microbeat.
+      // Shake amplitudes dialled in so they feel like impact, not an
+      // earthquake. Roughly halved from the previous pass.
       const finisher = msg.combo === 3;
       if (msg.fatal) {
         this.hitstop(42);
-        this.cameras.main.shake(180, 0.012);
-        this.flashScreen(0xffffff, 0.55, 60);
+        this.cameras.main.shake(150, 0.006);
+        this.flashScreen(0xffffff, 0.45, 60);
         this.bumpKillStreak();
       } else if (msg.crit) {
         this.hitstop(22);
-        this.cameras.main.shake(110, 0.008);
-        this.flashScreen(0xffe4b5, 0.35, 50);
+        this.cameras.main.shake(90, 0.004);
+        this.flashScreen(0xffe4b5, 0.28, 50);
       } else if (finisher) {
-        // 3rd-strike combo finisher: meaty thump even without crit.
         this.hitstop(28);
-        this.cameras.main.shake(140, 0.0085);
-        this.flashScreen(0xffffff, 0.32, 60);
+        this.cameras.main.shake(110, 0.0042);
+        this.flashScreen(0xffffff, 0.26, 60);
         this.showFinisherRing(msg.x, msg.y);
       } else {
-        // Light hits get NO hitstop — chain reads as continuous flow.
-        this.cameras.main.shake(45, 0.0033);
+        // Light hits: tiny micro-shake, no flash, no hitstop.
+        this.cameras.main.shake(35, 0.0018);
       }
 
       // 6) Combo counter pop above the target on every melee hit.
@@ -1557,10 +1564,12 @@ export class WorldScene extends Phaser.Scene {
       this.spritePunch(s.sprite, 1.18);
       this.spawnImpactBurst(msg.x, msg.y, !!msg.crit);
       if (msg.targetId === this.mySessionId) {
-        this.shakeCamera();
+        // Player got hit: vignette + soft screen flash. Skip the
+        // generic shakeCamera() and shake just enough to feel it,
+        // not enough to lose track of the world.
+        this.cameras.main.shake(140, 0.005);
         this.flashHurtVignette(msg.dmg);
-        this.flashScreen(0xff3030, 0.32, 90);
-        if (msg.fatal) this.cameras.main.shake(520, 0.022);
+        if (msg.fatal) this.cameras.main.shake(360, 0.012);
       }
     }
     this.spawnDamageNumber(
