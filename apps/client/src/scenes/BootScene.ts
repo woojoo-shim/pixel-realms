@@ -485,6 +485,14 @@ function drawMonster(
       g.fillRect(cx - 3, cy + 5, 6, 1);
       g.fillRect(cx - 4, cy + 4, 1, 1);
       g.fillRect(cx + 3, cy + 4, 1, 1);
+      // Signature: pink tongue lolling out + drip running down the side
+      g.fillStyle(0xf472b6, 1);
+      g.fillRect(cx - 1, cy + 6, 3, 2);
+      g.fillRect(cx, cy + 7, 1, 1);
+      g.fillStyle(base, 1);
+      g.fillEllipse(cx + 9, cy + 8, 3, 5);
+      g.fillStyle(light, 0.9);
+      g.fillEllipse(cx + 9, cy + 7, 2, 2);
       break;
     }
     case "wolf": {
@@ -510,6 +518,14 @@ function drawMonster(
       g.fillTriangle(cx - 3, cy + 3, cx - 2, cy + 6, cx - 1, cy + 3);
       g.fillTriangle(cx + 1, cy + 3, cx + 2, cy + 6, cx + 3, cy + 3);
       eyes(g, cx, cy - 6, 4, 1.8, 0xfde047);
+      // Signature: angry scar slashing across left eye
+      g.fillStyle(0x991b1b, 1);
+      g.fillRect(cx - 5, cy - 9, 1, 6);
+      g.fillRect(cx - 6, cy - 8, 1, 3);
+      // Raised hackle tufts on the back ridge
+      g.fillStyle(deep, 1);
+      g.fillTriangle(cx - 5, cy - 4, cx - 3, cy - 8, cx - 1, cy - 4);
+      g.fillTriangle(cx + 1, cy - 4, cx + 3, cy - 8, cx + 5, cy - 4);
       break;
     }
     case "spider": {
@@ -545,6 +561,10 @@ function drawMonster(
       g.fillStyle(0xffffff, 1);
       g.fillTriangle(cx - 3, cy - 1, cx - 2, cy + 2, cx - 1, cy - 1);
       g.fillTriangle(cx + 1, cy - 1, cx + 2, cy + 2, cx + 3, cy - 1);
+      // Signature: red hourglass (black-widow mark) on the abdomen
+      g.fillStyle(0xdc2626, 1);
+      g.fillTriangle(cx, cy + 1, cx - 2, cy - 1, cx + 2, cy - 1);
+      g.fillTriangle(cx, cy + 1, cx - 2, cy + 4, cx + 2, cy + 4);
       break;
     }
     case "scorpion": {
@@ -587,6 +607,13 @@ function drawMonster(
       g.fillStyle(0x000000, 1);
       g.fillCircle(cx - 2, cy - 1, 0.8);
       g.fillCircle(cx + 2, cy - 1, 0.8);
+      // Signature: glowing venom drop on the stinger tip
+      g.fillStyle(0xfde047, 0.45);
+      g.fillCircle(cx + 2, cy - 18, 3);
+      g.fillStyle(0xfde047, 1);
+      g.fillCircle(cx + 2, cy - 18, 1.4);
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(cx + 2.5, cy - 18.5, 0.5);
       break;
     }
     case "sandworm": {
@@ -619,6 +646,17 @@ function drawMonster(
       g.fillRect(cx - 14, cy + 10, 2, 2);
       g.fillRect(cx + 12, cy + 9, 2, 2);
       g.fillRect(cx + 14, cy + 12, 1, 1);
+      // Signature: extra concentric ring around the maw + dribbled sand
+      // trail. Reads as "this thing came up from beneath" even at small
+      // size.
+      g.lineStyle(1, 0xfde047, 0.65);
+      g.beginPath();
+      g.arc(cx, cy - 11, 7.5, 0, Math.PI * 2);
+      g.strokePath();
+      g.fillStyle(0xd9c188, 1);
+      g.fillRect(cx - 2, cy + 14, 1, 1);
+      g.fillRect(cx + 2, cy + 13, 1, 1);
+      g.fillRect(cx, cy + 15, 1, 1);
       break;
     }
     case "mummy": {
@@ -648,6 +686,13 @@ function drawMonster(
       g.fillStyle(0xfde047, 1);
       g.fillCircle(cx - 4, cy - 3, 1.5);
       g.fillCircle(cx + 4, cy - 3, 1.5);
+      // Signature: gold amulet on the chest — the wrap's centrepiece
+      g.fillStyle(0xfde047, 1);
+      g.fillCircle(cx, cy + 7, 2.2);
+      g.fillStyle(0xfbbf24, 1);
+      g.fillCircle(cx, cy + 7, 1.2);
+      g.fillStyle(0x713f12, 1);
+      g.fillRect(cx, cy + 4, 1, 3);
       break;
     }
     case "bat": {
@@ -668,6 +713,15 @@ function drawMonster(
       g.fillTriangle(cx - 2, cy + 4, cx - 1, cy + 7, cx, cy + 4);
       g.fillTriangle(cx + 2, cy + 4, cx + 1, cy + 7, cx, cy + 4);
       eyes(g, cx, cy - 1, 3, 2, 0xff1744);
+      // Signature: pink heart-nose and big fluffy inner ear tufts —
+      // creepy-cute beats generic black blob.
+      g.fillStyle(base, 1);
+      g.fillCircle(cx - 3, cy - 8, 1.6);
+      g.fillCircle(cx + 3, cy - 8, 1.6);
+      g.fillStyle(0xf9a8d4, 1);
+      g.fillTriangle(cx - 1, cy + 1, cx + 1, cy + 1, cx, cy + 3);
+      g.fillStyle(0xffffff, 0.7);
+      g.fillCircle(cx - 0.5, cy + 1.5, 0.4);
       break;
     }
     case "golem": {
@@ -707,6 +761,17 @@ function drawMonster(
       g.fillStyle(deep, 1);
       g.fillRect(cx + 4, cy - 1, 1, 4);
       g.fillRect(cx - 5, cy + 5, 1, 3);
+      // Signature: glowing moss tufts on the shoulders ("ancient stone")
+      g.fillStyle(0x84cc16, 1);
+      g.fillRect(cx - 11, cy - 5, 4, 2);
+      g.fillRect(cx + 7, cy - 5, 4, 2);
+      g.fillStyle(0xbef264, 0.9);
+      g.fillRect(cx - 10, cy - 6, 2, 1);
+      g.fillRect(cx + 8, cy - 6, 2, 1);
+      // Glowing rune scar across one cheek
+      g.fillStyle(0x84ffff, 0.85);
+      g.fillRect(cx - 5, cy - 11, 3, 1);
+      g.fillRect(cx - 4, cy - 10, 1, 2);
       break;
     }
     case "goblin": {
@@ -746,6 +811,15 @@ function drawMonster(
       g.fillStyle(0x3e2723, 1);
       g.fillRect(cx + 7, cy + 1, 3, 2);
       g.fillRect(cx + 9, cy + 4, 1, 1);
+      // Signature: bone horn helmet + small skull pendant on the chest
+      g.fillStyle(0xfef3c7, 1);
+      g.fillTriangle(cx - 5, cy - 11, cx - 7, cy - 16, cx - 3, cy - 13);
+      g.fillTriangle(cx + 5, cy - 11, cx + 7, cy - 16, cx + 3, cy - 13);
+      g.fillStyle(0xfde68a, 1);
+      g.fillCircle(cx, cy + 5, 1.5);
+      g.fillStyle(0x000000, 1);
+      g.fillRect(cx - 1, cy + 5, 1, 1);
+      g.fillRect(cx, cy + 5, 1, 1);
       break;
     }
     case "crab": {
@@ -793,6 +867,18 @@ function drawMonster(
       g.fillStyle(0x000000, 1);
       g.fillCircle(cx - 4, cy - 6, 0.8);
       g.fillCircle(cx + 4, cy - 6, 0.8);
+      // Signature: asymmetric fighter pincer — the LEFT claw is a meaty
+      // boxer mitt twice the size of the right one. Instantly readable
+      // as "battle crab".
+      g.fillStyle(base, 1);
+      g.fillEllipse(cx - 19, cy - 2, 14, 11);
+      g.fillStyle(light, 1);
+      g.fillEllipse(cx - 20, cy - 4, 6, 4);
+      g.fillStyle(deep, 1);
+      g.fillTriangle(cx - 24, cy - 6, cx - 16, cy - 4, cx - 24, cy + 1);
+      // Scar / battle scuff on the big claw
+      g.fillStyle(0x000000, 0.45);
+      g.fillRect(cx - 21, cy - 1, 4, 1);
       break;
     }
     case "fish": {
@@ -824,6 +910,21 @@ function drawMonster(
       g.fillCircle(cx - 5, cy - 2, 1.2);
       g.fillStyle(0x000000, 1);
       g.fillCircle(cx - 5, cy - 2, 0.6);
+      // Signature: blood-red glow halo around the eye + a second row of
+      // sharper teeth on the upper jaw. Reads as a furious piranha.
+      g.fillStyle(0xff1744, 0.4);
+      g.fillCircle(cx - 5, cy - 2, 3.6);
+      g.fillStyle(0xffffff, 1);
+      for (let i = 0; i < 3; i++) {
+        g.fillTriangle(
+          cx - 10 + i * 2,
+          cy + 1,
+          cx - 9 + i * 2,
+          cy - 1,
+          cx - 8 + i * 2,
+          cy + 1
+        );
+      }
       break;
     }
     case "eel": {
@@ -860,6 +961,20 @@ function drawMonster(
       g.fillCircle(cx - 11, cy - 2, 1.2);
       g.fillStyle(0x000000, 1);
       g.fillCircle(cx - 11, cy - 2, 0.6);
+      // Signature: cyan-blue electric arc above the body. Sells the
+      // "this thing is currently shocking the water" silhouette at a
+      // glance, even when the smaller sparks don't read.
+      g.lineStyle(1.5, 0x67e8f9, 0.85);
+      g.beginPath();
+      g.moveTo(cx - 10, cy - 8);
+      g.lineTo(cx - 6, cy - 10);
+      g.lineTo(cx - 2, cy - 7);
+      g.lineTo(cx + 2, cy - 11);
+      g.lineTo(cx + 6, cy - 8);
+      g.strokePath();
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(cx - 10, cy - 8, 1, 1);
+      g.fillRect(cx + 6, cy - 8, 1, 1);
       break;
     }
   }
