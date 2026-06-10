@@ -1834,9 +1834,17 @@ export class WorldScene extends Phaser.Scene {
 
   /** Brief full-screen colored flash overlay. */
   private flashScreen(color: number, alpha: number, ms: number) {
+    // setScrollFactor(0) pins this to the camera viewport, so position
+    // and dimensions must be in SCREEN-space (camera pixels), not world
+    // coordinates. The previous version mixed the two — midPoint (a
+    // world coord) was used as the screen position, which caused the
+    // overlay to land at a random spot on screen depending on where
+    // the camera was looking, sometimes mostly off-screen.
     const cam = this.cameras.main;
+    const w = cam.width;
+    const h = cam.height;
     const rect = this.add
-      .rectangle(cam.midPoint.x, cam.midPoint.y, cam.width / cam.zoom, cam.height / cam.zoom, color, alpha)
+      .rectangle(w / 2, h / 2, w, h, color, alpha)
       .setScrollFactor(0)
       .setDepth(99997);
     this.tweens.add({
