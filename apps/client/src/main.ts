@@ -2,6 +2,12 @@ import Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene.js";
 import { MenuScene } from "./scenes/MenuScene.js";
 import { WorldScene } from "./scenes/WorldScene.js";
+import { installPremiumUi } from "./ui/premium.js";
+
+// Global UI polish — hover spotlight + ripple on every .pr-btn, single
+// shine sweep + gold shimmer border on every .pr-panel. Idempotent;
+// safe to call even if the page is re-entered.
+installPremiumUi();
 
 const isTouch =
   "ontouchstart" in window || (navigator.maxTouchPoints ?? 0) > 0;
