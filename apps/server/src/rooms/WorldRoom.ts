@@ -971,7 +971,10 @@ export class WorldRoom extends Room<WorldState> {
       (1 + psLv * SKILL_EFFECT.powerStrike_dmgPct) *
       (buffActive(p, "damage") ? SHRINE.DAMAGE_MULT : 1) *
       comboMult;
-    const dmg = baseDmg * (crit ? LOOT.CRIT_MULT : 1);
+    // Round the displayed damage at the boundary so floating-point
+    // multipliers (crit, combo, buff, str scaling) don't leak as
+    // "12.7" into the floating numbers.
+    const dmg = Math.round(baseDmg * (crit ? LOOT.CRIT_MULT : 1));
     hit.m.hp = Math.max(0, hit.m.hp - dmg);
     const fatal = hit.m.hp <= 0;
     tutorialAdvance(p, "first-attack");
@@ -1026,11 +1029,15 @@ export class WorldRoom extends Room<WorldState> {
       drMult;
     player.hp = Math.max(0, player.hp - adjusted);
     const fatal = player.hp <= 0;
+    // Show the ACTUAL damage applied (already accounts for iron skin /
+    // defense buff) and round it so e.g. 7.42 doesn't display as
+    // "7.42" in the floating number.
+    const shownDmg = Math.max(1, Math.round(adjusted));
 
     this.broadcast("fx:hit", {
       x: player.x,
       y: player.y - 18,
-      dmg,
+      dmg: shownDmg,
       target: "player",
       targetId: sessionId,
       fatal,
