@@ -426,17 +426,39 @@ function makePortal(
  * `t` is normalized 0..1 from south (entry) to north (exit).
  * Endpoints must return 0 so the path lines up with the arrival points.
  */
+/**
+ * Per-biome path curves. Endpoints are always 0 at t=0 and t=1 so the
+ * path enters/exits the biome lined up with the south/north portals.
+ *
+ * Curves are now much more pronounced — amplitudes 8-11 tiles instead
+ * of 3-5 — with stacked harmonics + a deterministic mid-frequency
+ * wobble so each biome reads as its own character rather than a clean
+ * sine. The wobble term uses cos to stay phase-distinct from the
+ * primary sin and is gated by sin(t*π) so it tapers to 0 at endpoints.
+ */
 const BIOME_PATH_CURVE: Record<Exclude<MapId, "town">, (t: number) => number> =
   {
-    // Forest: gentle single S
-    forest: (t) => Math.sin(t * Math.PI * 2) * 4,
-    // Desert: serpentine (longer winds)
-    desert: (t) => Math.sin(t * Math.PI * 3) * 5,
-    // Mountain: kinked switchback feel
+    // Forest: a slow meander with one extra organic wobble — feels
+    // like a foot-trodden path winding around old trees.
+    forest: (t) =>
+      Math.sin(t * Math.PI * 2) * 9 +
+      Math.sin(t * Math.PI * 5) * 2.2 * Math.sin(t * Math.PI),
+    // Desert: long sweeping serpentine — wide dunes mean you have to
+    // skirt around them. Biggest amplitude of the four.
+    desert: (t) =>
+      Math.sin(t * Math.PI * 1.8) * 11 +
+      Math.cos(t * Math.PI * 3.2) * 2.8 * Math.sin(t * Math.PI),
+    // Mountain: a switchback — sharp kinks back and forth as you climb
+    // around boulders.
     mountain: (t) =>
-      Math.sin(t * Math.PI * 2) * 3 + Math.sin(t * Math.PI * 4) * 2,
-    // Lake: gentle sway across the lily pads
-    lake: (t) => Math.sin(t * Math.PI * 2) * 3,
+      Math.sin(t * Math.PI * 3) * 7 +
+      Math.sin(t * Math.PI * 6) * 3 +
+      Math.cos(t * Math.PI * 9) * 1.4 * Math.sin(t * Math.PI),
+    // Lake: lazy drift across the lily pads with one big curl in the
+    // middle.
+    lake: (t) =>
+      Math.sin(t * Math.PI * 2.4) * 8 +
+      Math.cos(t * Math.PI * 4.5) * 2 * Math.sin(t * Math.PI),
   };
 
 interface BiomeOpts {
@@ -538,13 +560,16 @@ function generateBiome(
     }
   })();
   if (patchTile) {
-    const patchCount = 6 + Math.floor(rng.next() * 4);
+    // Doubled patch count from 6-9 → 14-20 + a wider radius range.
+    // Mix tiny clusters with bigger ones so the biome doesn't read as
+    // one solid colour from a distance.
+    const patchCount = 14 + Math.floor(rng.next() * 7);
     for (let i = 0; i < patchCount; i++) {
       const px = rng.intRange(minX + 3, maxX - 3);
       const py = rng.intRange(minY + 3, maxY - 3);
-      const r = 1 + rng.next() * 2.4;
-      for (let y = py - 3; y <= py + 3; y++) {
-        for (let x = px - 3; x <= px + 3; x++) {
+      const r = 1 + rng.next() * 3.6;
+      for (let y = py - 4; y <= py + 4; y++) {
+        for (let x = px - 4; x <= px + 4; x++) {
           if (
             Math.hypot(x - px, y - py) < r &&
             tiles[y]?.[x] === opts.baseTile
@@ -580,12 +605,32 @@ function generateBiome(
    * Each biome has its own curve signature. Endpoints always sit at cx
    * so they line up perfectly with the south/north arrival portals.
    */
+  // Path is 5 tiles wide (pathHalf 2) with a 1-tile soft "trodden"
+  // edge tile on each side (farmland — dirt-coloured) — gives the
+  // path natural worn shoulders instead of a hard cut into grass /
+  // sand / stone.
   const pathHalf = 2;
+  const edgeTile: TileType =
+    opts.baseTile === "stone" || opts.baseTile === "sand"
+      ? "path"
+      : "farmland";
   const curve = BIOME_PATH_CURVE[opts.id];
   for (let i = minY; i <= maxY; i++) {
     const t = (i - minY) / Math.max(1, maxY - minY); // 0..1
     const offset = curve(t);
     const center = Math.floor(cx + offset);
+    // Soft edges first — overwritten by the path core on the inner
+    // band so the dirt only shows on the rim.
+    for (const w of [-pathHalf - 1, pathHalf + 1]) {
+      const px = center + w;
+      if (
+        tiles[i]?.[px] &&
+        tiles[i][px] !== "water" &&
+        tiles[i][px] !== "path"
+      ) {
+        tiles[i][px] = edgeTile;
+      }
+    }
     for (let w = -pathHalf; w <= pathHalf; w++) {
       const px = center + w;
       if (tiles[i]?.[px]) tiles[i][px] = "path";
