@@ -36,6 +36,7 @@ import {
   playerDamage,
   playerSpeed,
   TUTORIAL_STEPS,
+  NPCS,
   CLASSES,
   STORY_SLIDES,
   type LootKind,
@@ -167,6 +168,18 @@ export class WorldScene extends Phaser.Scene {
   private skillBtn?: HTMLButtonElement;
   private sprites = new Map<string, RemoteSprite>();
   private monsters = new Map<string, MonsterSprite>();
+  private npcs = new Map<
+    string,
+    {
+      sprite: Phaser.GameObjects.Image;
+      nameLabel: Phaser.GameObjects.Text;
+      bubble?: Phaser.GameObjects.Container;
+      mapId: string;
+      targetX: number;
+      targetY: number;
+      lastLine: string;
+    }
+  >();
   private loots = new Map<string, LootSprite>();
   private shrines = new Map<
     string,
@@ -1454,6 +1467,12 @@ export class WorldScene extends Phaser.Scene {
       w.sprite.setVisible(visible);
       w.glow.setVisible(visible);
     });
+    this.npcs.forEach((n) => {
+      const visible = n.mapId === this.currentMap;
+      n.sprite.setVisible(visible);
+      n.nameLabel.setVisible(visible);
+      if (n.bubble) n.bubble.setVisible(visible);
+    });
     if (this.miniMap && this.maps) {
       const m = this.maps[mapId];
       if (m) this.miniMap.setMap(mapId, m);
@@ -2465,6 +2484,116 @@ export class WorldScene extends Phaser.Scene {
       x.title?.destroy();
       this.monsters.delete(id);
     });
+
+    /* ── NPCs (town villagers) ─────────────────────────────────── */
+    $(state).npcs.onAdd((n: any, id: string) => {
+      const def = (NPCS as readonly any[]).find((x) => x.id === id);
+      const sprite = this.add.image(n.x, n.y, "player-other");
+      sprite.setOrigin(0.5, 1);
+      sprite.setDepth(n.y);
+      // Tint with the NPC's themed colour (def color falls back to white)
+      sprite.setTint(def?.color ?? 0xffffff);
+
+      const labelText = def?.role
+        ? `${def?.name ?? id}  ·  ${def.role}`
+        : (def?.name ?? id);
+      const nameLabel = this.add
+        .text(n.x, n.y - 38, labelText, {
+          fontFamily: "monospace",
+          fontSize: "10px",
+          color: "#fef3c7",
+          stroke: "#000",
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(99999);
+
+      const visible =
+        this.currentMap != null && (n.mapId as string) === this.currentMap;
+      sprite.setVisible(visible);
+      nameLabel.setVisible(visible);
+
+      this.npcs.set(id, {
+        sprite,
+        nameLabel,
+        bubble: undefined,
+        mapId: n.mapId as string,
+        targetX: n.x,
+        targetY: n.y,
+        lastLine: "",
+      });
+
+      $(n).onChange(() => {
+        const entry = this.npcs.get(id);
+        if (!entry) return;
+        entry.targetX = n.x;
+        entry.targetY = n.y;
+        entry.mapId = n.mapId as string;
+        const vis =
+          this.currentMap != null &&
+          (n.mapId as string) === this.currentMap;
+        entry.sprite.setVisible(vis);
+        entry.nameLabel.setVisible(vis);
+        if (entry.bubble) entry.bubble.setVisible(vis);
+
+        // Speech bubble — create / replace when line changes, remove when empty
+        if (n.line !== entry.lastLine) {
+          entry.lastLine = n.line as string;
+          if (entry.bubble) {
+            entry.bubble.destroy();
+            entry.bubble = undefined;
+          }
+          if (n.line) {
+            entry.bubble = this.makeNpcBubble(n.x, n.y, n.line as string);
+            entry.bubble.setVisible(vis);
+          }
+        }
+      });
+    });
+
+    $(state).npcs.onRemove((_n: any, id: string) => {
+      const entry = this.npcs.get(id);
+      if (!entry) return;
+      entry.sprite.destroy();
+      entry.nameLabel.destroy();
+      entry.bubble?.destroy();
+      this.npcs.delete(id);
+    });
+  }
+
+  /** Build a small dark bubble with the NPC's line above their head. */
+  private makeNpcBubble(
+    x: number,
+    y: number,
+    text: string
+  ): Phaser.GameObjects.Container {
+    const padX = 6;
+    const padY = 4;
+    const txt = this.add.text(0, 0, text, {
+      fontFamily: "monospace",
+      fontSize: "10px",
+      color: "#fff",
+      align: "center",
+      wordWrap: { width: 160 },
+    });
+    txt.setOrigin(0.5, 0.5);
+    const w = txt.width + padX * 2;
+    const h = txt.height + padY * 2;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1a0e08, 0.92);
+    bg.lineStyle(1, 0xfde047, 0.85);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 4);
+    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 4);
+    // Small tail pointing down toward the NPC
+    bg.fillStyle(0x1a0e08, 0.92);
+    bg.fillTriangle(-4, h / 2 - 0.5, 4, h / 2 - 0.5, 0, h / 2 + 5);
+    bg.lineStyle(1, 0xfde047, 0.85);
+    bg.lineBetween(-4, h / 2, 0, h / 2 + 5);
+    bg.lineBetween(0, h / 2 + 5, 4, h / 2);
+
+    const c = this.add.container(x, y - 48, [bg, txt]);
+    c.setDepth(99998);
+    return c;
   }
 
   /** Visual arc in front of the attacking player. */
@@ -4236,6 +4365,30 @@ export class WorldScene extends Phaser.Scene {
       s.sprite.setDepth(s.sprite.y);
       s.label.x = s.sprite.x;
       s.label.y = s.sprite.y - PLAYER.SIZE / 2 - 4;
+    });
+
+    // NPC sprites — same lerp + name/bubble follow, slower idle wobble
+    this.npcs.forEach((n) => {
+      const before = n.sprite.x;
+      const beforeY = n.sprite.y;
+      n.sprite.x += (n.targetX - n.sprite.x) * t;
+      n.sprite.y += (n.targetY - n.sprite.y) * t;
+      const speed = Math.hypot(n.sprite.x - before, n.sprite.y - beforeY);
+      if (speed > 0.05) {
+        n.sprite.scaleY = 1 + Math.sin(this.bobClock * 12) * 0.05;
+        n.sprite.scaleX = 1 - Math.sin(this.bobClock * 12) * 0.035;
+      } else {
+        // Gentler idle breath — NPCs are calmer than players
+        n.sprite.scaleY = 1 + Math.sin(this.bobClock * 2) * 0.022;
+        n.sprite.scaleX = 1;
+      }
+      n.sprite.setDepth(n.sprite.y);
+      n.nameLabel.x = n.sprite.x;
+      n.nameLabel.y = n.sprite.y - PLAYER.SIZE / 2 - 6;
+      if (n.bubble) {
+        n.bubble.x = n.sprite.x;
+        n.bubble.y = n.sprite.y - PLAYER.SIZE / 2 - 22;
+      }
     });
 
     const meSprite = this.sprites.get(this.mySessionId)?.sprite;

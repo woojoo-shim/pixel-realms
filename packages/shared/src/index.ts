@@ -417,3 +417,8 @@ export type { ProfessionId, ProfessionDef } from "./professions.js";
 export * from "./story.js";
 export type { StorySlide } from "./story.js";
 
+
+
+export * from "./npcs.js";
+export type { NpcDef, NpcWaypoint } from "./npcs.js";
+

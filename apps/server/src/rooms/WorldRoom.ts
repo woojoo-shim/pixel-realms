@@ -10,6 +10,7 @@ import { MonsterState } from "../state/MonsterState.js";
 import { LootState } from "../state/LootState.js";
 import { ShrineState } from "../state/ShrineState.js";
 import { WaypointState } from "../state/WaypointState.js";
+import { NpcState } from "../state/NpcState.js";
 import { InventoryItemState } from "../state/InventoryItemState.js";
 import {
   InputMessage,
@@ -77,6 +78,8 @@ import {
   SKILL_EFFECT,
   SKILL_IDS,
   TUTORIAL_STEPS,
+  NPCS,
+  type NpcDef,
   CLASS_IDS,
   getClass,
   getSkillDef,
@@ -218,6 +221,18 @@ export class WorldRoom extends Room<WorldState> {
   private inputs = new Map<string, InputBuffer>();
   private portalCooldown = new Map<string, number>();
   private monsters = new Map<string, MonsterRuntime>();
+  /** Server-only per-NPC AI state (waypoint progress, cooldowns). */
+  private npcRuntime = new Map<
+    string,
+    {
+      def: NpcDef;
+      waypointIdx: number;
+      /** Epoch ms — leave waypoint at or after this time. 0 = pick on arrival. */
+      loiterUntil: number;
+      /** Epoch ms — next greet allowed. */
+      nextGreetAt: number;
+    }
+  >();
   private monsterIdSeq = 0;
   /** Per-player attack cooldown timestamps (epoch ms). */
   private playerAttackCd = new Map<string, number>();
@@ -331,6 +346,7 @@ export class WorldRoom extends Room<WorldState> {
     this.spawnAllChests();
     this.spawnAllShrines();
     this.spawnAllWaypoints();
+    this.spawnAllNpcs();
 
     // Periodic autosave so progress isn't lost on a crash
     this.saveTicker = setInterval(() => this.autosaveAll(), 30_000);
@@ -520,6 +536,119 @@ export class WorldRoom extends Room<WorldState> {
       seq++;
     }
     console.log(`[WorldRoom] spawned ${seq} waypoints`);
+  }
+
+  /* ─────────────────────────────────────────────────────────────── */
+  /* NPCs — patrolling villagers with personality                    */
+  /* ─────────────────────────────────────────────────────────────── */
+
+  private spawnAllNpcs() {
+    for (const def of NPCS) {
+      const start = def.waypoints[0];
+      if (!start) continue;
+      const state = new NpcState();
+      state.id = def.id;
+      state.mapId = def.mapId;
+      state.x = start.x;
+      state.y = start.y;
+      state.dir = "down";
+      state.moving = false;
+      state.line = "";
+      state.lineEnd = 0;
+      this.state.npcs.set(def.id, state);
+      this.npcRuntime.set(def.id, {
+        def,
+        waypointIdx: 0,
+        loiterUntil: 0,
+        nextGreetAt: 0,
+      });
+    }
+    console.log(`[WorldRoom] spawned ${NPCS.length} NPCs`);
+  }
+
+  /**
+   * NPC AI: walk → loiter → walk loop, with chance of voicing an idle
+   * line at each loiter and a greet line when a player walks up.
+   */
+  private tickNpcs(dtSec: number) {
+    const now = Date.now();
+    this.npcRuntime.forEach((r, id) => {
+      const s = this.state.npcs.get(id);
+      if (!s) return;
+      const target = r.def.waypoints[r.waypointIdx];
+      if (!target) return;
+      const dx = target.x - s.x;
+      const dy = target.y - s.y;
+      const d = Math.hypot(dx, dy);
+
+      if (d < 3) {
+        // Arrived — loiter until time runs out, then advance.
+        s.moving = false;
+        if (r.loiterUntil === 0) {
+          r.loiterUntil = now + target.loiterMs;
+          // 40% chance to say an idle line
+          if (Math.random() < 0.4 && r.def.idleLines.length > 0) {
+            this.npcSay(s, r.def.idleLines, 3000);
+          }
+        } else if (now >= r.loiterUntil) {
+          r.waypointIdx = (r.waypointIdx + 1) % r.def.waypoints.length;
+          r.loiterUntil = 0;
+        }
+      } else {
+        // Walk toward target
+        s.moving = true;
+        const step = Math.min(d, r.def.walkSpeed * dtSec);
+        const ratio = step / d;
+        s.x += dx * ratio;
+        s.y += dy * ratio;
+        // Face movement direction
+        if (Math.abs(dx) > Math.abs(dy)) {
+          s.dir = dx > 0 ? "right" : "left";
+        } else {
+          s.dir = dy > 0 ? "down" : "up";
+        }
+      }
+
+      // Greet nearby players (one-shot, with cooldown)
+      if (now >= r.nextGreetAt && r.def.greetLines.length > 0) {
+        let bestD = Infinity;
+        let bestPlayer: PlayerState | null = null;
+        this.state.players.forEach((p) => {
+          if (p.mapId !== s.mapId || !p.alive) return;
+          const pd = Math.hypot(p.x - s.x, p.y - s.y);
+          if (pd < bestD) {
+            bestD = pd;
+            bestPlayer = p;
+          }
+        });
+        if (bestPlayer && bestD < r.def.greetRange) {
+          r.nextGreetAt = now + 9000;
+          this.npcSay(s, r.def.greetLines, 3500);
+          // Turn to face the player
+          const player = bestPlayer as PlayerState;
+          const pdx = player.x - s.x;
+          const pdy = player.y - s.y;
+          if (Math.abs(pdx) > Math.abs(pdy)) {
+            s.dir = pdx > 0 ? "right" : "left";
+          } else {
+            s.dir = pdy > 0 ? "down" : "up";
+          }
+        }
+      }
+
+      // Clear expired line
+      if (s.line && now >= s.lineEnd) {
+        s.line = "";
+        s.lineEnd = 0;
+      }
+    });
+  }
+
+  /** Show a random line above the NPC for `ms` milliseconds. */
+  private npcSay(s: NpcState, lines: string[], ms: number) {
+    if (lines.length === 0) return;
+    s.line = lines[Math.floor(Math.random() * lines.length)] ?? "";
+    s.lineEnd = Date.now() + ms;
   }
 
   private handleUseWaypoint(sessionId: string, to?: string) {
@@ -2246,6 +2375,7 @@ export class WorldRoom extends Room<WorldState> {
     }
 
     this.tickMonsters(dtSec);
+    this.tickNpcs(dtSec);
 
     // Despawn old loot
     if (this.lootDespawn.size > 0) {
